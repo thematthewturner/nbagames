@@ -1,0 +1,26 @@
+{
+  "name": "march-madness-predictor",
+  "version": "2.0.0",
+  "description": "NCAA March Madness bracket predictor with real data scraping and Monte Carlo simulation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "scrape": "node scripts/update-all.js",
+    "scrape:torvik": "node scripts/scrape-torvik.js",
+    "scrape:ncaa": "node scripts/scrape-ncaa.js",
+    "scrape:odds": "node scripts/scrape-odds.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

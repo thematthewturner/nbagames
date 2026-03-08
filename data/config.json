@@ -1,0 +1,7 @@
+{
+  "_comment": "Configuration file for March Madness Predictor",
+  "oddsApiKey": "YOUR_KEY_HERE",
+  "_oddsApiNote": "Get a free API key at https://the-odds-api.com/#get-access (500 requests/month free)",
+  "defaultYear": 2026,
+  "defaultNumSims": 10000
+}

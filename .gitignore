@@ -1,0 +1,7 @@
+node_modules/
+data/torvik.json
+data/ncaa-net.json
+data/odds.json
+data/last-update.json
+.env
+*.log

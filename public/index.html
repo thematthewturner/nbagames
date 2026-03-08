@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>March Madness Predictor 2026</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0D1117',
+            card: '#161B22',
+            border: '#30363D',
+            accent: '#2563EB',
+            muted: '#8B949E',
+            text: '#C9D1D9',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #0D1117; color: #C9D1D9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #161B22; }
+    ::-webkit-scrollbar-thumb { background: #30363D; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #484F58; }
+    .tab-active { border-bottom: 2px solid #2563EB; color: #fff; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #8B949E; }
+    .tab-inactive:hover { color: #C9D1D9; border-bottom-color: #30363D; }
+    .bracket-line { border-color: #30363D; }
+    .pct-cell { transition: background 0.2s; }
+    .modal-backdrop { background: rgba(0,0,0,0.7); }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    input[type=range] { accent-color: #2563EB; }
+    .sortable:hover { cursor: pointer; background: #1F2937; }
+    .team-row:hover { background: #1c2333; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const REGIONS = ['East', 'West', 'South', 'Midwest'];
+
+const DEFAULT_WEIGHTS = {
+  odds: 35,
+  barthag: 30,
+  seedHist: 8,
+  netRank: 8,
+  wab: 5,
+  fourFactors: 10,
+  travel: 4,
+  coaching: 3,
+  q1WinRate: 4,
+  experience: 3,
+};
+
+const DEFAULT_TOGGLES = {
+  useOdds: true,
+  useTorvik: true,
+  useNCAA: true,
+  useSeedHistory: true,
+  useFourFactors: true,
+  useTravel: true,
+  useCoaching: true,
+};
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
+function fmt(v, digits = 1) {
+  if (v == null || v === '') return '—';
+  const n = parseFloat(v);
+  if (isNaN(n)) return v;
+  return n.toFixed(digits);
+}
+
+function fmtPct(v) {
+  if (v == null) return '—';
+  return (v * 100).toFixed(1) + '%';
+}
+
+function fmtDate(iso) {
+  if (!iso) return 'Never';
+  const d = new Date(iso);
+  if (isNaN(d)) return 'Unknown';
+  const now = new Date();
+  const diff = now - d;
+  const hours = diff / 3600000;
+  if (hours < 1) return `${Math.round(diff / 60000)}m ago`;
+  if (hours < 24) return `${Math.round(hours)}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
+function freshnessColor(iso) {
+  if (!iso) return '#EF4444'; // red — missing
+  const hours = (new Date() - new Date(iso)) / 3600000;
+  if (hours < 24) return '#22C55E';  // green
+  if (hours < 168) return '#EAB308'; // yellow < 7d
+  return '#EF4444';                   // red
+}
+
+function freshnessLabel(iso) {
+  if (!iso) return 'Missing';
+  const hours = (new Date() - new Date(iso)) / 3600000;
+  if (hours < 24) return 'Fresh';
+  if (hours < 168) return 'Stale';
+  return 'Old';
+}
+
+function pctColor(pct) {
+  if (pct == null) return 'transparent';
+  const p = parseFloat(pct);
+  if (isNaN(p)) return 'transparent';
+  const intensity = Math.min(p / 30, 1);
+  const r = Math.round(37 + intensity * (59 - 37));
+  const g = Math.round(99 + intensity * (130 - 99));
+  const b = Math.round(235 + intensity * (200 - 235));
+  return `rgba(${r},${g},${b},${0.15 + intensity * 0.4})`;
+}
+
+// ─── API Layer ───────────────────────────────────────────────────────────────
+
+async function apiFetch(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+// ─── Components ──────────────────────────────────────────────────────────────
+
+function Spinner({ size = 16 }) {
+  return (
+    <svg className="spinner" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+      <path d="M12 2a10 10 0 0 1 10 10" stroke="#2563EB" />
+    </svg>
+  );
+}
+
+function Badge({ children, color = '#2563EB' }) {
+  return (
+    <span style={{ background: color + '22', color, border: `1px solid ${color}44`, borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>
+      {children}
+    </span>
+  );
+}
+
+function Button({ children, onClick, loading, variant = 'primary', small, disabled, title }) {
+  const base = `inline-flex items-center gap-1.5 font-medium rounded transition-all ${small ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-2 text-sm'}`;
+  const variants = {
+    primary: 'bg-accent hover:bg-blue-700 text-white disabled:opacity-50',
+    secondary: 'bg-card border border-border hover:bg-[#1c2333] text-text disabled:opacity-50',
+    danger: 'bg-red-600 hover:bg-red-700 text-white disabled:opacity-50',
+    ghost: 'hover:bg-card text-muted hover:text-text disabled:opacity-50',
+  };
+  return (
+    <button
+      className={`${base} ${variants[variant]}`}
+      onClick={onClick}
+      disabled={loading || disabled}
+      title={title}
+    >
+      {loading ? <Spinner size={13} /> : null}
+      {children}
+    </button>
+  );
+}
+
+function Card({ children, className = '' }) {
+  return (
+    <div className={`bg-card border border-border rounded-lg ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ label, checked, onChange }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer select-none">
+      <div
+        className="relative w-9 h-5 rounded-full transition-colors"
+        style={{ background: checked ? '#2563EB' : '#30363D' }}
+        onClick={() => onChange(!checked)}
+      >
+        <div
+          className="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all"
+          style={{ left: checked ? 18 : 2 }}
+        />
+      </div>
+      <span className="text-sm text-text">{label}</span>
+    </label>
+  );
+}
+
+function Slider({ label, value, min = 0, max = 100, step = 1, onChange, unit = '%' }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-muted">{label}</span>
+        <span className="text-accent font-mono font-semibold">{value}{unit}</span>
+      </div>
+      <input
+        type="range"
+        min={min} max={max} step={step}
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-full h-1.5 rounded"
+        style={{ accentColor: '#2563EB' }}
+      />
+    </div>
+  );
+}
+
+// ─── Data Freshness Panel ─────────────────────────────────────────────────────
+
+function FreshnessPanel({ status, onRefreshAll, refreshing }) {
+  const sources = [
+    { key: 'torvik', label: 'Torvik', icon: '📊' },
+    { key: 'ncaa', label: 'NCAA NET', icon: '🏀' },
+    { key: 'odds', label: 'Odds', icon: '💰' },
+  ];
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      {sources.map(({ key, label, icon }) => {
+        const src = status?.[key];
+        const color = freshnessColor(src?.fetchedAt);
+        const fl = freshnessLabel(src?.fetchedAt);
+        return (
+          <div key={key} className="flex items-center gap-1.5 text-xs bg-card border border-border rounded px-2.5 py-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+            <span className="text-muted">{label}</span>
+            <span className="font-medium" style={{ color }}>{fl}</span>
+            {src?.fetchedAt && <span className="text-muted">· {fmtDate(src.fetchedAt)}</span>}
+            {src?.teams && <span className="text-muted">· {src.teams}t</span>}
+          </div>
+        );
+      })}
+      <Button onClick={onRefreshAll} loading={refreshing} small variant="secondary">
+        Refresh All
+      </Button>
+    </div>
+  );
+}
+
+// ─── Tab: Data ────────────────────────────────────────────────────────────────
+
+const DATA_COLS = [
+  { key: 'seed', label: 'Seed', fmt: v => v ?? '—' },
+  { key: 'name', label: 'Team', fmt: v => v },
+  { key: 'region', label: 'Region', fmt: v => v ?? '—' },
+  { key: 'conf', label: 'Conf', fmt: v => v ?? '—' },
+  { key: 'barthag', label: 'Barthag', fmt: v => fmt(v, 4) },
+  { key: 'adj_o', label: 'Adj O', fmt: v => fmt(v, 1) },
+  { key: 'adj_d', label: 'Adj D', fmt: v => fmt(v, 1) },
+  { key: 'adjEM', label: 'AdjEM', fmt: v => fmt(v, 1) },
+  { key: 'net_rank', label: 'NET', fmt: v => v ?? '—' },
+  { key: 'wab', label: 'WAB', fmt: v => fmt(v, 2) },
+  { key: 'efg', label: 'eFG%', fmt: v => fmt(v, 1) },
+  { key: 'tov', label: 'TO%', fmt: v => fmt(v, 1) },
+  { key: 'orb', label: 'ORB%', fmt: v => fmt(v, 1) },
+  { key: 'ftr', label: 'FTr', fmt: v => fmt(v, 3) },
+  { key: 'q1', label: 'Q1', fmt: v => v ?? '—' },
+  { key: 'q1_win_rate', label: 'Q1%', fmt: v => v != null ? (v * 100).toFixed(0) + '%' : '—' },
+  { key: 'rec', label: 'Record', fmt: v => v ?? '—' },
+];
+
+function DataTab({ teams, status, onScrape, scraping }) {
+  const [sortCol, setSortCol] = useState('barthag');
+  const [sortDir, setSortDir] = useState(-1);
+  const [filter, setFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('All');
+
+  const teamList = useMemo(() => {
+    let list = Object.values(teams || {});
+    if (filter) {
+      const lf = filter.toLowerCase();
+      list = list.filter(t => t.name?.toLowerCase().includes(lf) || t.conf?.toLowerCase().includes(lf));
+    }
+    if (regionFilter !== 'All') {
+      list = list.filter(t => t.region === regionFilter);
+    }
+    list.sort((a, b) => {
+      let av = a[sortCol], bv = b[sortCol];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
+      return (av - bv) * sortDir;
+    });
+    return list;
+  }, [teams, sortCol, sortDir, filter, regionFilter]);
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => -d);
+    else { setSortCol(col); setSortDir(-1); }
+  }
+
+  const scrapeButtons = [
+    { key: 'torvik', label: 'Scrape Torvik' },
+    { key: 'ncaa', label: 'Scrape NCAA' },
+    { key: 'odds', label: 'Scrape Odds' },
+    { key: 'all', label: 'Scrape All', variant: 'primary' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {scrapeButtons.map(({ key, label, variant = 'secondary' }) => (
+          <Button key={key} onClick={() => onScrape(key)} loading={scraping === key} variant={variant} small>
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      <Card className="p-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <input
+            className="bg-bg border border-border rounded px-3 py-1.5 text-sm text-text placeholder-muted focus:outline-none focus:border-accent"
+            placeholder="Search teams..."
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            style={{ minWidth: 180 }}
+          />
+          <select
+            className="bg-bg border border-border rounded px-3 py-1.5 text-sm text-text focus:outline-none focus:border-accent"
+            value={regionFilter}
+            onChange={e => setRegionFilter(e.target.value)}
+          >
+            <option>All</option>
+            {REGIONS.map(r => <option key={r}>{r}</option>)}
+          </select>
+          <span className="text-xs text-muted ml-auto">{teamList.length} teams</span>
+        </div>
+      </Card>
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr style={{ background: '#0D1117' }}>
+              {DATA_COLS.map(col => (
+                <th
+                  key={col.key}
+                  className="sortable text-left px-3 py-2 text-muted font-semibold whitespace-nowrap"
+                  onClick={() => handleSort(col.key)}
+                >
+                  {col.label} {sortCol === col.key ? (sortDir === -1 ? '↓' : '↑') : ''}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {teamList.length === 0 ? (
+              <tr>
+                <td colSpan={DATA_COLS.length} className="text-center py-10 text-muted">
+                  No team data loaded. Run a scraper or load a bracket.
+                </td>
+              </tr>
+            ) : teamList.map((team, i) => (
+              <tr key={team.name} className="team-row border-t border-border" style={{ background: i % 2 === 0 ? '#161B22' : '#13181f' }}>
+                {DATA_COLS.map(col => (
+                  <td key={col.key} className="px-3 py-2 whitespace-nowrap" style={{ color: col.key === 'name' ? '#fff' : '#C9D1D9' }}>
+                    {col.fmt(team[col.key])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab: Bracket ─────────────────────────────────────────────────────────────
+
+function SeedTeam({ seed, team, highlight }) {
+  if (!team) {
+    return (
+      <div className="flex items-center gap-1.5 py-1 px-2 rounded" style={{ opacity: 0.35 }}>
+        <span className="text-xs font-mono text-muted w-5 text-right flex-shrink-0">{seed}</span>
+        <span className="text-xs text-muted">TBD</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex items-center gap-1.5 py-1 px-2 rounded"
+      style={{ background: highlight ? '#2563EB22' : 'transparent', borderLeft: highlight ? '2px solid #2563EB' : '2px solid transparent' }}
+    >
+      <span className="text-xs font-mono text-muted w-5 text-right flex-shrink-0">{seed}</span>
+      <span className="text-xs text-white truncate">{team.name}</span>
+      {team.conf && <span className="text-xs text-muted ml-auto flex-shrink-0">{team.conf}</span>}
+    </div>
+  );
+}
+
+function RegionColumn({ region, seeds, teams }) {
+  const matchups = [
+    [1, 16], [8, 9], [5, 12], [4, 13],
+    [6, 11], [3, 14], [7, 10], [2, 15],
+  ];
+
+  const regionData = seeds || {};
+
+  return (
+    <Card className="p-3 flex flex-col gap-2">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-bold text-white">{region}</h3>
+        <Badge color="#2563EB">{Object.keys(regionData).length} teams</Badge>
+      </div>
+      <div className="space-y-1.5">
+        {matchups.map(([s1, s2]) => {
+          const t1 = regionData[String(s1)] || regionData[s1];
+          const t2 = regionData[String(s2)] || regionData[s2];
+          return (
+            <div key={`${s1}-${s2}`} className="rounded border border-border overflow-hidden" style={{ background: '#0D1117' }}>
+              <SeedTeam seed={s1} team={t1 ? { name: t1.name, conf: t1.conf } : null} />
+              <div className="border-t border-border border-dashed" />
+              <SeedTeam seed={s2} team={t2 ? { name: t2.name, conf: t2.conf } : null} />
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function BracketTab({ bracket }) {
+  if (!bracket) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-4">
+        <div className="text-5xl">🏀</div>
+        <h2 className="text-xl font-bold text-white">Selection Sunday: Drop in bracket.json</h2>
+        <p className="text-muted text-sm text-center max-w-md">
+          Save <code className="bg-card px-1.5 py-0.5 rounded text-accent">data/bracket.json</code> with the 68-team field, or use the file upload below.
+        </p>
+      </div>
+    );
+  }
+
+  const regions = bracket.regions || {};
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h2 className="text-lg font-bold text-white">
+          NCAA Tournament {bracket.year || '2026'}
+        </h2>
+        {bracket.selectionDate && (
+          <Badge color="#8B5CF6">Selection: {bracket.selectionDate}</Badge>
+        )}
+        {bracket.finalFour && (
+          <Badge color="#F59E0B">Final Four: {bracket.finalFour.location}</Badge>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {REGIONS.map(region => (
+          <RegionColumn
+            key={region}
+            region={region}
+            seeds={regions[region]?.seeds}
+          />
+        ))}
+      </div>
+
+      {bracket.firstFour?.games?.length > 0 && (
+        <Card className="p-3">
+          <h3 className="text-sm font-bold text-white mb-2">First Four — Dayton, OH</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {bracket.firstFour.games.map((g, i) => (
+              <div key={i} className="text-xs border border-border rounded p-2">
+                <div className="text-muted mb-1">Game {i + 1}</div>
+                <div>{g.home || '—'}</div>
+                <div className="text-muted">vs</div>
+                <div>{g.away || '—'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab: Predictions ─────────────────────────────────────────────────────────
+
+function PredictionsTab({ bracket, teams, weights, toggles, chaosLevel, numSims, simResults, onRunSim, simLoading, simError }) {
+  if (!bracket) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-4">
+        <div className="text-5xl">📊</div>
+        <h2 className="text-xl font-bold text-white">No Bracket Loaded</h2>
+        <p className="text-muted text-sm">Load a bracket.json to run predictions.</p>
+      </div>
+    );
+  }
+
+  const hasSims = simResults && simResults.teams && Object.keys(simResults.teams).length > 0;
+
+  const sortedByChamp = hasSims
+    ? Object.values(simResults.teams).sort((a, b) => (b.champ || 0) - (a.champ || 0)).slice(0, 16)
+    : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => onRunSim(10000)} loading={simLoading} variant="primary">
+          Run 10K Sims
+        </Button>
+        <Button onClick={() => onRunSim(50000)} loading={simLoading} variant="secondary">
+          Run 50K Sims
+        </Button>
+        {simResults?.meta && (
+          <span className="text-xs text-muted">
+            Last: {simResults.meta.numSims?.toLocaleString()} sims · {simResults.meta.elapsed}ms
+          </span>
+        )}
+        {simError && (
+          <span className="text-xs text-red-400">Error: {simError}</span>
+        )}
+      </div>
+
+      {!hasSims && !simLoading && (
+        <Card className="p-8 text-center">
+          <div className="text-3xl mb-3">🎯</div>
+          <p className="text-muted">Run a simulation to see predicted bracket progression.</p>
+          <p className="text-xs text-muted mt-2">Adjust weights and settings in the Settings tab first.</p>
+        </Card>
+      )}
+
+      {simLoading && (
+        <Card className="p-8 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <Spinner size={32} />
+            <p className="text-muted">Running Monte Carlo simulation server-side...</p>
+            <p className="text-xs text-muted">This may take a few seconds for large sim counts.</p>
+          </div>
+        </Card>
+      )}
+
+      {hasSims && !simLoading && (
+        <div className="space-y-4">
+          <Card className="p-3">
+            <h3 className="text-sm font-bold text-white mb-3">Top Championship Contenders</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {sortedByChamp.slice(0, 8).map((team, i) => (
+                <div key={team.name} className="bg-bg rounded-lg p-3 border border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg font-bold text-muted">#{i + 1}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white truncate">{team.name}</div>
+                  <div className="text-xs text-muted">{team.region} · #{team.seed}</div>
+                  <div className="mt-2">
+                    <div className="text-xl font-bold text-accent">{((team.champ || 0) * 100).toFixed(1)}%</div>
+                    <div className="text-xs text-muted">champ probability</div>
+                  </div>
+                  <div className="mt-2 space-y-0.5 text-xs text-muted">
+                    <div>F4: {((team.f4 || 0) * 100).toFixed(1)}%</div>
+                    <div>E8: {((team.e8 || 0) * 100).toFixed(1)}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {simResults.rounds && (
+            <Card className="p-3">
+              <h3 className="text-sm font-bold text-white mb-3">Predicted Bracket Progression</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {Object.entries(simResults.rounds).map(([round, teams]) => (
+                  <div key={round}>
+                    <div className="text-xs font-semibold text-accent mb-2">{round}</div>
+                    <div className="space-y-1">
+                      {(Array.isArray(teams) ? teams : []).slice(0, 8).map(t => (
+                        <div key={t.name} className="text-xs bg-bg rounded px-2 py-1 border border-border flex justify-between gap-1">
+                          <span className="truncate text-white">{t.name}</span>
+                          <span className="text-accent flex-shrink-0">{((t.prob || 0) * 100).toFixed(0)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Game Factor Modal ────────────────────────────────────────────────────────
+
+function GameModal({ game, onClose }) {
+  if (!game) return null;
+  return (
+    <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl p-5 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold text-white">Factor Breakdown</h3>
+          <button onClick={onClose} className="text-muted hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-center">
+            <div className="text-sm font-bold text-white">{game.team1}</div>
+            <div className="text-xs text-muted">#{game.seed1}</div>
+          </div>
+          <div className="text-accent font-bold">vs</div>
+          <div className="text-center">
+            <div className="text-sm font-bold text-white">{game.team2}</div>
+            <div className="text-xs text-muted">#{game.seed2}</div>
+          </div>
+        </div>
+        {game.factors && (
+          <div className="space-y-2">
+            {Object.entries(game.factors).map(([factor, data]) => (
+              <div key={factor} className="bg-bg rounded p-2.5">
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-muted capitalize">{factor.replace(/_/g, ' ')}</span>
+                  <span className="font-medium" style={{ color: data.edge > 0 ? '#22C55E' : data.edge < 0 ? '#EF4444' : '#8B949E' }}>
+                    {data.edge > 0 ? '+' : ''}{fmt(data.edge, 2)} edge
+                  </span>
+                </div>
+                <div className="relative h-1.5 bg-border rounded-full overflow-hidden">
+                  <div
+                    className="absolute h-full rounded-full"
+                    style={{
+                      background: data.edge >= 0 ? '#2563EB' : '#EF4444',
+                      width: `${Math.min(Math.abs(data.edge) * 20, 100)}%`,
+                      left: data.edge >= 0 ? '50%' : `${50 - Math.min(Math.abs(data.edge) * 20, 50)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!game.factors && (
+          <p className="text-muted text-xs text-center">Factor breakdown available after running simulation.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab: Analytics ───────────────────────────────────────────────────────────
+
+function AnalyticsTab({ simResults, bracket, teams }) {
+  const [sortCol, setSortCol] = useState('champ');
+  const [sortDir, setSortDir] = useState(-1);
+  const [regionFilter, setRegionFilter] = useState('All');
+  const [selectedGame, setSelectedGame] = useState(null);
+
+  const hasSims = simResults && simResults.teams && Object.keys(simResults.teams).length > 0;
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => -d);
+    else { setSortCol(col); setSortDir(-1); }
+  }
+
+  const teamList = useMemo(() => {
+    if (!hasSims) return [];
+    let list = Object.values(simResults.teams);
+    if (regionFilter !== 'All') list = list.filter(t => t.region === regionFilter);
+    list.sort((a, b) => {
+      let av = a[sortCol], bv = b[sortCol];
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
+      return (av - bv) * sortDir;
+    });
+    return list;
+  }, [simResults, sortCol, sortDir, regionFilter]);
+
+  const upsets = useMemo(() => {
+    if (!simResults?.upsets) return [];
+    return simResults.upsets.slice(0, 10);
+  }, [simResults]);
+
+  const ANALYTICS_COLS = [
+    { key: 'seed', label: 'Seed' },
+    { key: 'name', label: 'Team' },
+    { key: 'region', label: 'Region' },
+    { key: 'champ', label: 'Champ%' },
+    { key: 'f4', label: 'F4%' },
+    { key: 'e8', label: 'E8%' },
+    { key: 's16', label: 'S16%' },
+    { key: 'r32', label: 'R32%' },
+  ];
+
+  const sources = simResults?.meta?.sources || {};
+
+  return (
+    <div className="space-y-4">
+      {!hasSims && (
+        <Card className="p-8 text-center">
+          <div className="text-3xl mb-3">📈</div>
+          <p className="text-muted">Run a simulation from the Predictions tab to see analytics.</p>
+        </Card>
+      )}
+
+      {hasSims && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted">Sources:</span>
+              {Object.entries(sources).map(([src, active]) => (
+                <span key={src} style={{ color: active ? '#22C55E' : '#EF4444' }}>
+                  {src} {active ? '✓' : '✗'}
+                </span>
+              ))}
+            </div>
+            {simResults.meta?.numSims && (
+              <Badge color="#8B5CF6">{simResults.meta.numSims.toLocaleString()} sims</Badge>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Card className="p-3 flex-1 min-w-48">
+              <h4 className="text-xs font-semibold text-muted mb-2">CHAMPIONSHIP PROBABILITY</h4>
+              <div className="space-y-1.5">
+                {teamList.slice(0, 8).map(t => (
+                  <div key={t.name} className="flex items-center gap-2">
+                    <span className="text-xs text-muted w-4">{t.seed}</span>
+                    <span className="text-xs text-white flex-1 truncate">{t.name}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div className="w-20 h-1.5 bg-border rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-accent"
+                          style={{ width: `${Math.min((t.champ || 0) * 100 * 5, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-accent font-mono w-10 text-right">{((t.champ || 0) * 100).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {upsets.length > 0 && (
+              <Card className="p-3 flex-1 min-w-48">
+                <h4 className="text-xs font-semibold text-muted mb-2">UPSET WATCH</h4>
+                <div className="space-y-1.5">
+                  {upsets.map((u, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 cursor-pointer hover:bg-bg rounded px-1 py-0.5 transition-colors"
+                      onClick={() => setSelectedGame(u)}
+                    >
+                      <span className="text-xs text-amber-400 flex-shrink-0">#{u.seed} over #{u.favSeed}</span>
+                      <span className="text-xs text-white flex-1 truncate">{u.team}</span>
+                      <span className="text-xs text-amber-400 flex-shrink-0">{((u.prob || 0) * 100).toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+
+          <Card>
+            <div className="flex flex-wrap items-center gap-3 p-3 border-b border-border">
+              <h3 className="text-sm font-bold text-white">Monte Carlo Results</h3>
+              <select
+                className="bg-bg border border-border rounded px-2.5 py-1 text-xs text-text focus:outline-none"
+                value={regionFilter}
+                onChange={e => setRegionFilter(e.target.value)}
+              >
+                <option>All</option>
+                {REGIONS.map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: '#0D1117' }}>
+                    {ANALYTICS_COLS.map(col => (
+                      <th
+                        key={col.key}
+                        className="sortable text-left px-3 py-2 text-muted font-semibold whitespace-nowrap"
+                        onClick={() => handleSort(col.key)}
+                      >
+                        {col.label} {sortCol === col.key ? (sortDir === -1 ? '↓' : '↑') : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamList.map((team, i) => (
+                    <tr key={team.name} className="team-row border-t border-border" style={{ background: i % 2 === 0 ? '#161B22' : '#13181f' }}>
+                      <td className="px-3 py-2 text-muted">{team.seed}</td>
+                      <td className="px-3 py-2 text-white font-medium">{team.name}</td>
+                      <td className="px-3 py-2 text-muted">{team.region}</td>
+                      {['champ', 'f4', 'e8', 's16', 'r32'].map(key => {
+                        const val = (team[key] || 0) * 100;
+                        return (
+                          <td key={key} className="px-3 py-2 font-mono pct-cell" style={{ background: pctColor(val) }}>
+                            {val.toFixed(1)}%
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {selectedGame && (
+        <GameModal game={selectedGame} onClose={() => setSelectedGame(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Tab: Settings ────────────────────────────────────────────────────────────
+
+function SettingsTab({ weights, setWeights, toggles, setToggles, chaosLevel, setChaosLevel, numSims, setNumSims }) {
+  const weightItems = [
+    { key: 'odds', label: 'Betting Odds', desc: 'Market-implied win probability' },
+    { key: 'barthag', label: 'Barthag', desc: 'T-Rank power rating' },
+    { key: 'seedHist', label: 'Seed History', desc: 'Historical seed matchup rates' },
+    { key: 'netRank', label: 'NCAA NET Rank', desc: 'NET ranking differential' },
+    { key: 'wab', label: 'WAB', desc: 'Wins Above Bubble' },
+    { key: 'fourFactors', label: 'Four Factors', desc: 'eFG%, TO%, ORB%, FTr' },
+    { key: 'travel', label: 'Travel Distance', desc: 'Campus-to-site distance' },
+    { key: 'coaching', label: 'Coaching Exp', desc: 'Head coach tournament experience' },
+    { key: 'q1WinRate', label: 'Q1 Win Rate', desc: 'Wins vs Quad 1 opponents' },
+    { key: 'experience', label: 'Experience', desc: 'Roster age/experience factor' },
+  ];
+
+  const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+
+  function resetWeights() {
+    setWeights({ ...DEFAULT_WEIGHTS });
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-white">Factor Weights</h3>
+          <div className="flex items-center gap-3">
+            <span className={`text-xs font-mono ${Math.abs(totalWeight - 100) > 1 ? 'text-red-400' : 'text-green-400'}`}>
+              Total: {totalWeight}%
+            </span>
+            <Button onClick={resetWeights} small variant="ghost">Reset</Button>
+          </div>
+        </div>
+        {Math.abs(totalWeight - 100) > 1 && (
+          <div className="text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded px-3 py-2 mb-3">
+            Weights don't sum to 100%. They will be normalized during simulation.
+          </div>
+        )}
+        <div className="space-y-4">
+          {weightItems.map(({ key, label, desc }) => (
+            <div key={key}>
+              <div className="text-xs text-muted mb-0.5">{desc}</div>
+              <Slider
+                label={label}
+                value={weights[key] || 0}
+                min={0}
+                max={100}
+                onChange={v => setWeights(w => ({ ...w, [key]: v }))}
+              />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="text-sm font-bold text-white mb-4">Data Source Toggles</h3>
+        <div className="space-y-3">
+          {[
+            { key: 'useOdds', label: 'Use Betting Odds' },
+            { key: 'useTorvik', label: 'Use Torvik / T-Rank' },
+            { key: 'useNCAA', label: 'Use NCAA NET' },
+            { key: 'useSeedHistory', label: 'Use Seed History' },
+            { key: 'useFourFactors', label: 'Use Four Factors' },
+            { key: 'useTravel', label: 'Use Travel Distance' },
+            { key: 'useCoaching', label: 'Use Coaching Factor' },
+          ].map(({ key, label }) => (
+            <Toggle
+              key={key}
+              label={label}
+              checked={toggles[key] ?? true}
+              onChange={v => setToggles(t => ({ ...t, [key]: v }))}
+            />
+          ))}
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="text-sm font-bold text-white mb-4">Simulation Settings</h3>
+        <div className="space-y-4">
+          <Slider
+            label="Chaos Level"
+            value={chaosLevel}
+            min={0}
+            max={10}
+            step={0.5}
+            unit=""
+            onChange={setChaosLevel}
+          />
+          <div className="text-xs text-muted">
+            Higher chaos = more randomness, more upsets. 0 = deterministic, 10 = pure chaos.
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-xs text-muted font-medium">Number of Simulations</div>
+            <div className="flex flex-wrap gap-2">
+              {[1000, 5000, 10000, 25000, 50000, 100000].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setNumSims(n)}
+                  className={`px-3 py-1.5 text-xs rounded border transition-all ${numSims === n ? 'bg-accent border-accent text-white' : 'bg-bg border-border text-muted hover:border-accent hover:text-white'}`}
+                >
+                  {n.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Bracket Upload UI ────────────────────────────────────────────────────────
+
+function BracketUpload({ onBracketLoad }) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const fileRef = useRef();
+
+  function parseAndLoad(str) {
+    setError('');
+    setSuccess('');
+    try {
+      const data = JSON.parse(str);
+      if (!data.regions) throw new Error('Missing "regions" key — not a valid bracket.json');
+      onBracketLoad(data);
+      setSuccess('Bracket loaded!');
+      setText('');
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => parseAndLoad(ev.target.result);
+    reader.readAsText(file);
+  }
+
+  function handlePaste() {
+    parseAndLoad(text);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Button small variant="secondary" onClick={() => fileRef.current?.click()}>
+          Upload bracket.json
+        </Button>
+        <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleFile} />
+        <span className="text-xs text-muted">or paste JSON below</span>
+      </div>
+      <div className="flex gap-2">
+        <textarea
+          className="flex-1 bg-bg border border-border rounded px-3 py-2 text-xs text-text placeholder-muted focus:outline-none focus:border-accent resize-none font-mono"
+          placeholder='{"regions": {...}} — paste bracket.json here'
+          rows={2}
+          value={text}
+          onChange={e => setText(e.target.value)}
+        />
+        <Button small onClick={handlePaste} disabled={!text.trim()}>Load</Button>
+      </div>
+      {error && <div className="text-xs text-red-400">{error}</div>}
+      {success && <div className="text-xs text-green-400">{success}</div>}
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
+const TABS = ['Data', 'Bracket', 'Predictions', 'Analytics', 'Settings'];
+
+function App() {
+  const [tab, setTab] = useState('Bracket');
+  const [serverOnline, setServerOnline] = useState(null);
+
+  // Data state
+  const [teams, setTeams] = useState({});
+  const [bracket, setBracket] = useState(null);
+  const [odds, setOdds] = useState({});
+  const [meta, setMeta] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState('');
+
+  // Simulation state
+  const [simResults, setSimResults] = useState(null);
+  const [simLoading, setSimLoading] = useState(false);
+  const [simError, setSimError] = useState('');
+
+  // Scraper state
+  const [scraping, setScraping] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Settings state
+  const [weights, setWeights] = useState({ ...DEFAULT_WEIGHTS });
+  const [toggles, setToggles] = useState({ ...DEFAULT_TOGGLES });
+  const [chaosLevel, setChaosLevel] = useState(2);
+  const [numSims, setNumSims] = useState(10000);
+
+  // Load initial data
+  useEffect(() => {
+    loadData();
+    loadStatus();
+  }, []);
+
+  async function loadData() {
+    setDataLoading(true);
+    setDataError('');
+    try {
+      const data = await apiFetch('/api/data');
+      setTeams(data.teams || {});
+      setBracket(data.bracket);
+      setOdds(data.odds || {});
+      setMeta(data.meta);
+      setServerOnline(true);
+    } catch (e) {
+      setDataError(e.message);
+      setServerOnline(false);
+    } finally {
+      setDataLoading(false);
+    }
+  }
+
+  async function loadStatus() {
+    try {
+      const s = await apiFetch('/api/status');
+      setStatus(s);
+    } catch {}
+  }
+
+  async function handleScrape(source) {
+    setScraping(source);
+    try {
+      await apiFetch(`/api/scrape/${source}`, { method: 'POST', body: JSON.stringify({}) });
+      await loadData();
+      await loadStatus();
+    } catch (e) {
+      setDataError(`Scrape failed: ${e.message}`);
+    } finally {
+      setScraping(null);
+    }
+  }
+
+  async function handleRefreshAll() {
+    setRefreshing(true);
+    try {
+      await apiFetch('/api/scrape/all', { method: 'POST', body: JSON.stringify({}) });
+      await loadData();
+      await loadStatus();
+    } catch (e) {
+      setDataError(`Refresh failed: ${e.message}`);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleRunSim(n) {
+    if (!bracket || !teams) {
+      setSimError('No bracket or team data loaded');
+      return;
+    }
+    setSimLoading(true);
+    setSimError('');
+    const count = n || numSims;
+    try {
+      const result = await apiFetch('/api/simulate', {
+        method: 'POST',
+        body: JSON.stringify({
+          bracket,
+          teams,
+          weights,
+          toggles,
+          chaosLevel,
+          numSims: count,
+        }),
+      });
+      setSimResults(result);
+      setTab('Analytics');
+    } catch (e) {
+      setSimError(e.message);
+    } finally {
+      setSimLoading(false);
+    }
+  }
+
+  function handleBracketLoad(data) {
+    setBracket(data);
+    // Save to server
+    apiFetch('/api/bracket', { method: 'POST', body: JSON.stringify(data) }).catch(() => {});
+  }
+
+  // Server offline fallback
+  if (serverOnline === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="p-8 max-w-md w-full text-center space-y-4">
+          <div className="text-4xl">🏀</div>
+          <h1 className="text-xl font-bold text-white">March Madness Predictor 2026</h1>
+          <div className="text-red-400 text-sm font-medium">Server not reachable</div>
+          <div className="bg-bg rounded-lg p-4 text-left text-xs font-mono text-muted border border-border space-y-1">
+            <div className="text-green-400"># Start the server:</div>
+            <div>cd nbagames</div>
+            <div>npm install</div>
+            <div>npm start</div>
+            <div className="mt-2 text-green-400"># Then open:</div>
+            <div>http://localhost:3000</div>
+          </div>
+          <div className="text-xs text-muted">{dataError}</div>
+          <Button onClick={loadData} loading={dataLoading}>Retry Connection</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const teamCount = Object.keys(teams).length;
+  const bracketLoaded = !!bracket;
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: '#0D1117' }}>
+      {/* Header */}
+      <header className="border-b border-border sticky top-0 z-30" style={{ background: '#0D1117' }}>
+        <div className="max-w-screen-2xl mx-auto px-4">
+          <div className="flex items-center gap-4 py-3">
+            <div className="flex items-center gap-2.5 flex-shrink-0">
+              <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-white font-bold text-sm">MM</div>
+              <div>
+                <div className="text-sm font-bold text-white leading-tight">March Madness</div>
+                <div className="text-xs text-muted leading-tight">Predictor 2026</div>
+              </div>
+            </div>
+
+            <div className="hidden md:flex items-center gap-1 ml-4">
+              {TABS.map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-3.5 py-2 text-sm font-medium transition-all rounded-t ${tab === t ? 'tab-active' : 'tab-inactive'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <div className="ml-auto flex items-center gap-3">
+              {dataLoading && <Spinner size={14} />}
+              {!bracketLoaded && (
+                <Badge color="#F59E0B">No Bracket</Badge>
+              )}
+              {bracketLoaded && (
+                <Badge color="#22C55E">{bracket.year || '2026'} Bracket</Badge>
+              )}
+              {teamCount > 0 && (
+                <Badge color="#8B5CF6">{teamCount} teams</Badge>
+              )}
+              <Button onClick={loadData} loading={dataLoading} small variant="ghost" title="Refresh all data from server">
+                ↻ Refresh
+              </Button>
+            </div>
+          </div>
+
+          {/* Mobile tabs */}
+          <div className="flex md:hidden gap-1 pb-1 overflow-x-auto">
+            {TABS.map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all rounded-t ${tab === t ? 'tab-active' : 'tab-inactive'}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {/* Data Freshness Bar */}
+      <div className="border-b border-border" style={{ background: '#161B22' }}>
+        <div className="max-w-screen-2xl mx-auto px-4 py-2">
+          <FreshnessPanel status={status} onRefreshAll={handleRefreshAll} refreshing={refreshing} />
+        </div>
+      </div>
+
+      {/* Bracket Upload Bar (shown when no bracket) */}
+      {!bracketLoaded && (
+        <div className="border-b border-border" style={{ background: '#1a1f2e' }}>
+          <div className="max-w-screen-2xl mx-auto px-4 py-2">
+            <BracketUpload onBracketLoad={handleBracketLoad} />
+          </div>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {dataError && (
+        <div className="bg-red-900/20 border-b border-red-800/40 px-4 py-2 text-xs text-red-400 max-w-screen-2xl mx-auto w-full">
+          {dataError}
+          <button onClick={() => setDataError('')} className="ml-3 text-red-600 hover:text-red-400">×</button>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-4 py-4">
+        {serverOnline === null ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="flex flex-col items-center gap-4">
+              <Spinner size={32} />
+              <p className="text-muted text-sm">Connecting to server...</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {tab === 'Data' && (
+              <DataTab
+                teams={teams}
+                status={status}
+                onScrape={handleScrape}
+                scraping={scraping}
+              />
+            )}
+            {tab === 'Bracket' && (
+              <BracketTab bracket={bracket} teams={teams} />
+            )}
+            {tab === 'Predictions' && (
+              <PredictionsTab
+                bracket={bracket}
+                teams={teams}
+                weights={weights}
+                toggles={toggles}
+                chaosLevel={chaosLevel}
+                numSims={numSims}
+                simResults={simResults}
+                onRunSim={handleRunSim}
+                simLoading={simLoading}
+                simError={simError}
+              />
+            )}
+            {tab === 'Analytics' && (
+              <AnalyticsTab
+                simResults={simResults}
+                bracket={bracket}
+                teams={teams}
+              />
+            )}
+            {tab === 'Settings' && (
+              <SettingsTab
+                weights={weights}
+                setWeights={setWeights}
+                toggles={toggles}
+                setToggles={setToggles}
+                chaosLevel={chaosLevel}
+                setChaosLevel={setChaosLevel}
+                numSims={numSims}
+                setNumSims={setNumSims}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-border py-3 px-4 text-center text-xs text-muted" style={{ background: '#161B22' }}>
+        March Madness Predictor 2026 · Local Server · Data: Torvik, NCAA NET, The Odds API
+        {meta?.torvik?.fetchedAt && (
+          <span className="ml-3">· Torvik: {fmtDate(meta.torvik.fetchedAt)}</span>
+        )}
+      </footer>
+    </div>
+  );
+}
+
+// ─── Mount ────────────────────────────────────────────────────────────────────
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
