@@ -75,7 +75,35 @@ export interface DateRange {
   label: string;
 }
 
-export type PanelTab = 'pnl' | 'category' | 'rolling' | 'projections' | 'merchants' | 'heatmap' | 'anomalies' | 'income';
+export type PanelTab = 'pnl' | 'category' | 'rolling' | 'projections' | 'merchants' | 'heatmap' | 'anomalies' | 'income' | 'scenarios';
+
+export interface Debt {
+  id: string;
+  name: string;
+  balance: number;
+  apr: number;       // annual percentage rate as a decimal, e.g. 0.199
+  minPayment: number;
+}
+
+export interface DebtPayoffMonth {
+  month: number;
+  totalBalance: number;
+  totalInterestPaid: number;
+  debts: { name: string; balance: number }[];
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  monthlyContribution: number; // $ per month earmarked
+}
+
+export interface BudgetScenario {
+  categoryAdjustments: Record<string, number>; // category -> % change (-50 to +50)
+  label: string;
+}
 
 export interface FilterState {
   dateRange: DateRange;

@@ -8,6 +8,7 @@ import { MerchantsPanel } from './components/panels/MerchantsPanel';
 import { HeatmapPanel } from './components/panels/HeatmapPanel';
 import { AnomalyPanel } from './components/panels/AnomalyPanel';
 import { IncomePanel } from './components/panels/IncomePanel';
+import { ScenariosPanel } from './components/panels/ScenariosPanel';
 import { SearchModal } from './components/SearchModal';
 import { useTransactions } from './hooks/useTransactions';
 import { useRollingCalc } from './hooks/useRollingCalc';
@@ -21,7 +22,8 @@ const PANEL_TABS: { id: PanelTab; label: string; color: string }[] = [
   { id: 'merchants', label: 'MERCHANTS', color: '#ffb300' },
   { id: 'heatmap', label: 'HEATMAP', color: '#00aaff' },
   { id: 'anomalies', label: 'ANOMALIES', color: '#ff4444' },
-  { id: 'income', label: 'INCOME', color: '#00ff88' },
+  { id: 'income',    label: 'INCOME',    color: '#00ff88' },
+  { id: 'scenarios', label: 'SCENARIOS', color: '#aa44ff' },
 ];
 
 const DEFAULT_LAYOUT: PanelTab[] = ['pnl', 'category', 'rolling', 'merchants', 'projections', 'anomalies'];
@@ -110,6 +112,9 @@ function renderPanel(
     case 'heatmap': return <HeatmapPanel filteredTransactions={filteredTransactions} />;
     case 'anomalies': return <AnomalyPanel filteredTransactions={filteredTransactions} />;
     case 'income': return <IncomePanel filteredTransactions={filteredTransactions} />;
+    case 'scenarios': return (
+      <ScenariosPanel monthlyPnL={monthlyPnL} categorySummaries={categorySummaries} />
+    );
     default: return null;
   }
 }
