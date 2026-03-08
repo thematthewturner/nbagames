@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 March Madness Bracket Predictor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background: #0D1117; color: #E8E8E8; font-family: 'Inter', sans-serif; }
+    .font-condensed { font-family: 'Barlow Condensed', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1a2e; }
+    ::-webkit-scrollbar-thumb { background: #2d6a2d; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo, useReducer, useRef } = React;
+
+    // ========== CONSTANTS ==========
+    const SEED_WIN_R64 = { 1:.993, 2:.937, 3:.855, 4:.795, 5:.645, 6:.625, 7:.605, 8:.49, 9:.51, 10:.395, 11:.375, 12:.355, 13:.205, 14:.145, 15:.063, 16:.007 };
+    const SEED_MATCHUPS_R64 = { "1-16":.993, "2-15":.937, "3-14":.855, "4-13":.795, "5-12":.645, "6-11":.625, "7-10":.605, "8-9":.49 };
+    const SEED_ADVANCE = {
+      1:[.993,.85,.68,.42,.27,.16], 2:[.937,.72,.46,.25,.13,.07], 3:[.855,.56,.30,.14,.06,.03],
+      4:[.795,.48,.24,.10,.04,.02], 5:[.645,.38,.17,.06,.02,.01], 6:[.625,.38,.16,.06,.02,.01],
+      7:[.605,.32,.12,.04,.015,.005], 8:[.49,.25,.09,.03,.01,.004], 9:[.51,.25,.08,.03,.01,.003],
+      10:[.395,.22,.07,.02,.007,.002], 11:[.375,.18,.06,.02,.008,.003], 12:[.355,.16,.04,.01,.003,.001],
+      13:[.205,.06,.015,.004,.001,.0003], 14:[.145,.04,.008,.002,.0005,.0001],
+      15:[.063,.015,.003,.001,.0002,.00005], 16:[.007,.001,.0002,.00005,.00001,.000002]
+    };
+    const VENUES = {
+      r1: {
+        South:   { city:"Tampa, FL",         lat:27.94, lng:-82.45, arena:"Amalie Arena" },
+        West:    { city:"San Diego, CA",     lat:32.72, lng:-117.16,arena:"Viejas Arena" },
+        Midwest: { city:"St. Louis, MO",     lat:38.63, lng:-90.20, arena:"Enterprise Center" },
+        East:    { city:"Buffalo, NY",       lat:42.89, lng:-78.88, arena:"KeyBank Center" }
+      },
+      r2: {
+        South:   { city:"Greenville, SC",   lat:34.85, lng:-82.40, arena:"Bon Secours Arena" },
+        West:    { city:"Portland, OR",     lat:45.53, lng:-122.67,arena:"Moda Center" },
+        Midwest: { city:"Oklahoma City, OK",lat:35.47, lng:-97.51, arena:"Paycom Center" },
+        East:    { city:"Philadelphia, PA", lat:39.95, lng:-75.17, arena:"Xfinity Mobile Arena" }
+      },
+      regional: {
+        South:   { city:"Houston, TX",     lat:29.75, lng:-95.36, arena:"NRG Stadium" },
+        West:    { city:"San Jose, CA",    lat:37.34, lng:-121.89,arena:"SAP Center" },
+        Midwest: { city:"Chicago, IL",     lat:41.88, lng:-87.63, arena:"United Center" },
+        East:    { city:"Washington, DC",  lat:38.90, lng:-77.02, arena:"Capital One Arena" }
+      },
+      finalFour: { city:"Indianapolis, IN", lat:39.76, lng:-86.16, arena:"Lucas Oil Stadium" }
+    };
+
+    // ========== TEAMS DATA ==========
+    const TEAMS = [
+      // 1 Seeds
+      { name:"Duke",         seed:1,  adjEM:32.5, adjORk:4,   adjDRk:3,   adjTempo:68.5, conf:"ACC",     lat:35.99, lng:-78.90,  coachExp:45, froshMin:0.35, confChamp:false, wins:27, losses:3,  q1w:10, q1l:2  },
+      { name:"Arizona",      seed:1,  adjEM:31.8, adjORk:7,   adjDRk:5,   adjTempo:69.2, conf:"Big 12",  lat:32.23, lng:-110.95, coachExp:30, froshMin:0.25, confChamp:false, wins:26, losses:4,  q1w:9,  q1l:3  },
+      { name:"Michigan",     seed:1,  adjEM:31.2, adjORk:6,   adjDRk:8,   adjTempo:67.8, conf:"Big Ten", lat:42.28, lng:-83.74,  coachExp:20, froshMin:0.30, confChamp:false, wins:26, losses:4,  q1w:8,  q1l:3  },
+      { name:"UConn",        seed:1,  adjEM:29.5, adjORk:20,  adjDRk:11,  adjTempo:66.5, conf:"Big East",lat:41.81, lng:-72.25,  coachExp:55, froshMin:0.20, confChamp:true,  wins:27, losses:4,  q1w:8,  q1l:3  },
+      // 2 Seeds
+      { name:"Florida",      seed:2,  adjEM:28.8, adjORk:9,   adjDRk:9,   adjTempo:68.0, conf:"SEC",     lat:29.65, lng:-82.32,  coachExp:25, froshMin:0.28, confChamp:false, wins:25, losses:5,  q1w:8,  q1l:4  },
+      { name:"Houston",      seed:2,  adjEM:27.5, adjORk:14,  adjDRk:7,   adjTempo:64.2, conf:"Big 12",  lat:29.72, lng:-95.34,  coachExp:40, froshMin:0.22, confChamp:false, wins:25, losses:5,  q1w:7,  q1l:4  },
+      { name:"Illinois",     seed:2,  adjEM:27.0, adjORk:1,   adjDRk:30,  adjTempo:70.5, conf:"Big Ten", lat:40.11, lng:-88.24,  coachExp:15, froshMin:0.30, confChamp:false, wins:24, losses:6,  q1w:7,  q1l:5  },
+      { name:"Michigan St",  seed:2,  adjEM:26.2, adjORk:15,  adjDRk:12,  adjTempo:67.0, conf:"Big Ten", lat:42.73, lng:-84.48,  coachExp:75, froshMin:0.18, confChamp:false, wins:24, losses:6,  q1w:7,  q1l:4  },
+      // 3 Seeds
+      { name:"Purdue",       seed:3,  adjEM:25.8, adjORk:2,   adjDRk:33,  adjTempo:66.8, conf:"Big Ten", lat:40.42, lng:-86.91,  coachExp:25, froshMin:0.20, confChamp:false, wins:24, losses:7,  q1w:7,  q1l:5  },
+      { name:"Kansas",       seed:3,  adjEM:24.5, adjORk:16,  adjDRk:18,  adjTempo:68.3, conf:"Big 12",  lat:38.95, lng:-95.25,  coachExp:60, froshMin:0.32, confChamp:false, wins:23, losses:7,  q1w:6,  q1l:5  },
+      { name:"Nebraska",     seed:3,  adjEM:23.5, adjORk:22,  adjDRk:15,  adjTempo:65.5, conf:"Big Ten", lat:40.82, lng:-96.70,  coachExp:10, froshMin:0.25, confChamp:false, wins:25, losses:5,  q1w:7,  q1l:3  },
+      { name:"Iowa State",   seed:3,  adjEM:23.0, adjORk:18,  adjDRk:8,   adjTempo:64.8, conf:"Big 12",  lat:42.03, lng:-93.63,  coachExp:20, froshMin:0.22, confChamp:false, wins:23, losses:7,  q1w:6,  q1l:5  },
+      // 4 Seeds
+      { name:"Virginia",     seed:4,  adjEM:22.0, adjORk:35,  adjDRk:6,   adjTempo:60.5, conf:"ACC",     lat:38.03, lng:-78.51,  coachExp:50, froshMin:0.15, confChamp:false, wins:23, losses:7,  q1w:6,  q1l:5  },
+      { name:"Gonzaga",      seed:4,  adjEM:21.5, adjORk:30,  adjDRk:10,  adjTempo:71.0, conf:"WCC",     lat:47.67, lng:-117.40, coachExp:55, froshMin:0.28, confChamp:true,  wins:25, losses:5,  q1w:4,  q1l:2  },
+      { name:"Texas Tech",   seed:4,  adjEM:21.0, adjORk:12,  adjDRk:22,  adjTempo:66.0, conf:"Big 12",  lat:33.58, lng:-101.85, coachExp:18, froshMin:0.30, confChamp:false, wins:22, losses:8,  q1w:6,  q1l:6  },
+      { name:"N Carolina",   seed:4,  adjEM:20.5, adjORk:25,  adjDRk:20,  adjTempo:69.0, conf:"ACC",     lat:35.91, lng:-79.05,  coachExp:35, froshMin:0.35, confChamp:false, wins:22, losses:8,  q1w:6,  q1l:6  },
+      // 5 Seeds
+      { name:"St. John's",   seed:5,  adjEM:19.5, adjORk:53,  adjDRk:14,  adjTempo:64.5, conf:"Big East",lat:40.73, lng:-73.79,  coachExp:12, froshMin:0.20, confChamp:false, wins:22, losses:8,  q1w:5,  q1l:5  },
+      { name:"Tennessee",    seed:5,  adjEM:19.0, adjORk:40,  adjDRk:16,  adjTempo:63.8, conf:"SEC",     lat:35.95, lng:-83.93,  coachExp:30, froshMin:0.25, confChamp:false, wins:21, losses:9,  q1w:5,  q1l:6  },
+      { name:"Alabama",      seed:5,  adjEM:19.0, adjORk:3,   adjDRk:59,  adjTempo:72.5, conf:"SEC",     lat:33.21, lng:-87.54,  coachExp:20, froshMin:0.38, confChamp:false, wins:21, losses:9,  q1w:6,  q1l:7  },
+      { name:"Vanderbilt",   seed:5,  adjEM:18.5, adjORk:11,  adjDRk:35,  adjTempo:69.5, conf:"SEC",     lat:36.14, lng:-86.80,  coachExp:8,  froshMin:0.32, confChamp:false, wins:21, losses:9,  q1w:5,  q1l:6  },
+      // 6 Seeds
+      { name:"Arkansas",     seed:6,  adjEM:18.0, adjORk:5,   adjDRk:50,  adjTempo:71.0, conf:"SEC",     lat:36.07, lng:-94.17,  coachExp:35, froshMin:0.30, confChamp:false, wins:21, losses:9,  q1w:5,  q1l:6  },
+      { name:"Kentucky",     seed:6,  adjEM:17.5, adjORk:28,  adjDRk:25,  adjTempo:68.0, conf:"SEC",     lat:38.03, lng:-84.50,  coachExp:25, froshMin:0.42, confChamp:false, wins:20, losses:10, q1w:4,  q1l:6  },
+      { name:"Iowa",         seed:6,  adjEM:17.0, adjORk:19,  adjDRk:28,  adjTempo:69.8, conf:"Big Ten", lat:41.66, lng:-91.53,  coachExp:20, froshMin:0.22, confChamp:false, wins:21, losses:9,  q1w:5,  q1l:6  },
+      { name:"BYU",          seed:6,  adjEM:16.5, adjORk:10,  adjDRk:51,  adjTempo:67.5, conf:"Big 12",  lat:40.25, lng:-111.65, coachExp:15, froshMin:0.20, confChamp:false, wins:21, losses:9,  q1w:4,  q1l:6  },
+      // 7 Seeds
+      { name:"Villanova",    seed:7,  adjEM:15.5, adjORk:32,  adjDRk:24,  adjTempo:65.5, conf:"Big East",lat:40.04, lng:-75.34,  coachExp:30, froshMin:0.28, confChamp:false, wins:20, losses:10, q1w:4,  q1l:6  },
+      { name:"Saint Mary's", seed:7,  adjEM:15.0, adjORk:38,  adjDRk:19,  adjTempo:62.0, conf:"WCC",     lat:37.84, lng:-122.11, coachExp:20, froshMin:0.15, confChamp:false, wins:24, losses:6,  q1w:3,  q1l:2  },
+      { name:"Wisconsin",    seed:7,  adjEM:14.5, adjORk:42,  adjDRk:21,  adjTempo:63.0, conf:"Big Ten", lat:43.07, lng:-89.41,  coachExp:15, froshMin:0.20, confChamp:false, wins:20, losses:10, q1w:4,  q1l:6  },
+      { name:"Louisville",   seed:7,  adjEM:14.0, adjORk:24,  adjDRk:32,  adjTempo:68.5, conf:"ACC",     lat:38.21, lng:-85.76,  coachExp:18, froshMin:0.30, confChamp:false, wins:21, losses:9,  q1w:4,  q1l:5  },
+      // 8 Seeds
+      { name:"Saint Louis",  seed:8,  adjEM:13.0, adjORk:45,  adjDRk:26,  adjTempo:65.0, conf:"A10",     lat:38.64, lng:-90.23,  coachExp:10, froshMin:0.25, confChamp:true,  wins:24, losses:7,  q1w:3,  q1l:3  },
+      { name:"Miami OH",     seed:8,  adjEM:12.5, adjORk:48,  adjDRk:27,  adjTempo:66.0, conf:"MAC",     lat:39.51, lng:-84.73,  coachExp:5,  froshMin:0.20, confChamp:true,  wins:25, losses:6,  q1w:2,  q1l:2  },
+      { name:"Georgia",      seed:8,  adjEM:12.0, adjORk:33,  adjDRk:38,  adjTempo:68.0, conf:"SEC",     lat:33.95, lng:-83.37,  coachExp:12, froshMin:0.35, confChamp:false, wins:20, losses:10, q1w:4,  q1l:7  },
+      { name:"Utah State",   seed:8,  adjEM:11.5, adjORk:44,  adjDRk:30,  adjTempo:64.5, conf:"MWC",     lat:41.74, lng:-111.81, coachExp:8,  froshMin:0.22, confChamp:true,  wins:25, losses:6,  q1w:2,  q1l:3  },
+      // 9 Seeds
+      { name:"Clemson",      seed:9,  adjEM:11.0, adjORk:36,  adjDRk:36,  adjTempo:66.5, conf:"ACC",     lat:34.68, lng:-82.84,  coachExp:15, froshMin:0.28, confChamp:false, wins:20, losses:10, q1w:4,  q1l:6  },
+      { name:"NC State",     seed:9,  adjEM:10.5, adjORk:34,  adjDRk:40,  adjTempo:67.0, conf:"ACC",     lat:35.79, lng:-78.68,  coachExp:10, froshMin:0.25, confChamp:false, wins:20, losses:10, q1w:4,  q1l:6  },
+      { name:"Oklahoma",     seed:9,  adjEM:10.0, adjORk:37,  adjDRk:34,  adjTempo:67.5, conf:"SEC",     lat:35.21, lng:-97.44,  coachExp:22, froshMin:0.30, confChamp:false, wins:19, losses:11, q1w:3,  q1l:6  },
+      { name:"Auburn",       seed:9,  adjEM:10.0, adjORk:26,  adjDRk:45,  adjTempo:70.0, conf:"SEC",     lat:32.60, lng:-85.49,  coachExp:18, froshMin:0.30, confChamp:false, wins:19, losses:11, q1w:4,  q1l:7  },
+      // 10 Seeds
+      { name:"Texas",        seed:10, adjEM:9.5,  adjORk:27,  adjDRk:42,  adjTempo:68.0, conf:"SEC",     lat:30.28, lng:-97.73,  coachExp:15, froshMin:0.30, confChamp:false, wins:19, losses:11, q1w:3,  q1l:6  },
+      { name:"SMU",          seed:10, adjEM:9.0,  adjORk:29,  adjDRk:44,  adjTempo:68.0, conf:"ACC",     lat:32.84, lng:-96.78,  coachExp:10, froshMin:0.25, confChamp:false, wins:19, losses:11, q1w:3,  q1l:6  },
+      { name:"Providence",   seed:10, adjEM:8.5,  adjORk:46,  adjDRk:29,  adjTempo:64.5, conf:"Big East",lat:41.84, lng:-71.40,  coachExp:18, froshMin:0.22, confChamp:false, wins:20, losses:10, q1w:3,  q1l:5  },
+      { name:"Ohio State",   seed:10, adjEM:8.5,  adjORk:41,  adjDRk:37,  adjTempo:67.0, conf:"Big Ten", lat:40.00, lng:-83.01,  coachExp:12, froshMin:0.30, confChamp:false, wins:19, losses:11, q1w:3,  q1l:6  },
+      // 11 Seeds
+      { name:"Baylor",       seed:11, adjEM:8.0,  adjORk:31,  adjDRk:48,  adjTempo:67.5, conf:"Big 12",  lat:31.55, lng:-97.12,  coachExp:25, froshMin:0.30, confChamp:false, wins:19, losses:11, q1w:3,  q1l:6  },
+      { name:"UCLA",         seed:11, adjEM:7.5,  adjORk:39,  adjDRk:43,  adjTempo:68.0, conf:"Big Ten", lat:34.07, lng:-118.44, coachExp:20, froshMin:0.35, confChamp:false, wins:18, losses:12, q1w:3,  q1l:7  },
+      { name:"Santa Clara",  seed:11, adjEM:7.0,  adjORk:50,  adjDRk:31,  adjTempo:63.5, conf:"WCC",     lat:37.35, lng:-121.94, coachExp:3,  froshMin:0.18, confChamp:false, wins:23, losses:7,  q1w:2,  q1l:2  },
+      { name:"UCF",          seed:11, adjEM:7.0,  adjORk:43,  adjDRk:41,  adjTempo:66.0, conf:"Big 12",  lat:28.60, lng:-81.20,  coachExp:5,  froshMin:0.28, confChamp:false, wins:20, losses:10, q1w:3,  q1l:5  },
+      // 12 Seeds
+      { name:"Belmont",      seed:12, adjEM:6.5,  adjORk:47,  adjDRk:39,  adjTempo:68.0, conf:"MVC",     lat:36.15, lng:-86.79,  coachExp:12, froshMin:0.20, confChamp:true,  wins:26, losses:5,  q1w:1,  q1l:2  },
+      { name:"Tulsa",        seed:12, adjEM:6.0,  adjORk:49,  adjDRk:35,  adjTempo:65.5, conf:"AAC",     lat:36.15, lng:-95.95,  coachExp:8,  froshMin:0.22, confChamp:true,  wins:24, losses:7,  q1w:1,  q1l:2  },
+      { name:"Drake",        seed:12, adjEM:5.5,  adjORk:52,  adjDRk:33,  adjTempo:63.5, conf:"MVC",     lat:41.60, lng:-93.65,  coachExp:8,  froshMin:0.18, confChamp:false, wins:24, losses:7,  q1w:1,  q1l:2  },
+      { name:"VCU",          seed:12, adjEM:5.5,  adjORk:55,  adjDRk:28,  adjTempo:69.0, conf:"A10",     lat:37.55, lng:-77.45,  coachExp:10, froshMin:0.22, confChamp:false, wins:23, losses:8,  q1w:2,  q1l:3  },
+      // 13 Seeds
+      { name:"Akron",        seed:13, adjEM:4.0,  adjORk:60,  adjDRk:55,  adjTempo:66.0, conf:"MAC",     lat:41.08, lng:-81.51,  coachExp:5,  froshMin:0.25, confChamp:true,  wins:25, losses:6,  q1w:0,  q1l:1  },
+      { name:"Vermont",      seed:13, adjEM:3.5,  adjORk:65,  adjDRk:50,  adjTempo:64.0, conf:"AE",      lat:44.48, lng:-73.19,  coachExp:10, froshMin:0.18, confChamp:true,  wins:27, losses:4,  q1w:0,  q1l:1  },
+      { name:"High Point",   seed:13, adjEM:3.0,  adjORk:68,  adjDRk:52,  adjTempo:68.0, conf:"Big South",lat:35.97,lng:-80.00, coachExp:2,  froshMin:0.30, confChamp:true,  wins:26, losses:5,  q1w:0,  q1l:2  },
+      { name:"Yale",         seed:13, adjEM:2.5,  adjORk:70,  adjDRk:48,  adjTempo:62.5, conf:"Ivy",     lat:41.31, lng:-72.92,  coachExp:8,  froshMin:0.15, confChamp:true,  wins:24, losses:5,  q1w:0,  q1l:1  },
+      // 14 Seeds
+      { name:"Lipscomb",     seed:14, adjEM:1.5,  adjORk:80,  adjDRk:65,  adjTempo:66.5, conf:"ASUN",    lat:36.17, lng:-86.80,  coachExp:3,  froshMin:0.25, confChamp:true,  wins:25, losses:7,  q1w:0,  q1l:2  },
+      { name:"Colgate",      seed:14, adjEM:1.0,  adjORk:85,  adjDRk:60,  adjTempo:63.0, conf:"Patriot", lat:42.82, lng:-75.54,  coachExp:5,  froshMin:0.18, confChamp:true,  wins:26, losses:5,  q1w:0,  q1l:1  },
+      { name:"Wofford",      seed:14, adjEM:0.5,  adjORk:90,  adjDRk:62,  adjTempo:64.0, conf:"SoCon",   lat:34.95, lng:-81.93,  coachExp:4,  froshMin:0.20, confChamp:true,  wins:25, losses:6,  q1w:0,  q1l:2  },
+      { name:"UNC Wilm.",    seed:14, adjEM:0.5,  adjORk:88,  adjDRk:63,  adjTempo:65.0, conf:"CAA",     lat:34.23, lng:-77.87,  coachExp:2,  froshMin:0.28, confChamp:true,  wins:25, losses:6,  q1w:0,  q1l:2  },
+      // 15 Seeds
+      { name:"Robert Morris",seed:15, adjEM:-1.0, adjORk:110, adjDRk:75,  adjTempo:66.0, conf:"Horizon", lat:40.68, lng:-80.10,  coachExp:3,  froshMin:0.25, confChamp:true,  wins:24, losses:8,  q1w:0,  q1l:3  },
+      { name:"SFA",          seed:15, adjEM:-1.5, adjORk:115, adjDRk:80,  adjTempo:67.0, conf:"Southland",lat:31.62,lng:-94.65, coachExp:2,  froshMin:0.22, confChamp:true,  wins:24, losses:7,  q1w:0,  q1l:2  },
+      { name:"Quinnipiac",   seed:15, adjEM:-2.0, adjORk:120, adjDRk:85,  adjTempo:63.5, conf:"MAAC",    lat:41.42, lng:-72.89,  coachExp:1,  froshMin:0.28, confChamp:true,  wins:23, losses:8,  q1w:0,  q1l:2  },
+      { name:"Montana",      seed:15, adjEM:-2.5, adjORk:125, adjDRk:82,  adjTempo:65.0, conf:"Big Sky",  lat:46.86, lng:-114.01, coachExp:4,  froshMin:0.22, confChamp:true,  wins:23, losses:7,  q1w:0,  q1l:2  },
+      // 16 Seeds
+      { name:"Norfolk State",seed:16, adjEM:-5.0, adjORk:160, adjDRk:110, adjTempo:68.0, conf:"MEAC",    lat:36.85, lng:-76.27,  coachExp:5,  froshMin:0.30, confChamp:true,  wins:22, losses:10, q1w:0,  q1l:3  },
+      { name:"Grambling",    seed:16, adjEM:-6.0, adjORk:170, adjDRk:120, adjTempo:69.0, conf:"SWAC",    lat:32.52, lng:-92.72,  coachExp:2,  froshMin:0.35, confChamp:true,  wins:21, losses:11, q1w:0,  q1l:3  },
+      { name:"Sacred Heart", seed:16, adjEM:-7.0, adjORk:180, adjDRk:130, adjTempo:66.0, conf:"NEC",     lat:41.22, lng:-73.24,  coachExp:1,  froshMin:0.30, confChamp:true,  wins:20, losses:12, q1w:0,  q1l:3  },
+      { name:"Alabama St",   seed:16, adjEM:-8.0, adjORk:200, adjDRk:140, adjTempo:69.5, conf:"SWAC",    lat:32.36, lng:-86.30,  coachExp:1,  froshMin:0.35, confChamp:false, wins:19, losses:13, q1w:0,  q1l:4  }
+    ];
+
+    const DEFAULT_REGION_ASSIGNMENTS = {
+      South:   ["Duke","Florida","Purdue","Virginia","St. John's","Arkansas","Villanova","Saint Louis","Clemson","Texas","Baylor","Belmont","Akron","Lipscomb","Robert Morris","Norfolk State"],
+      West:    ["Arizona","Houston","Kansas","Gonzaga","Tennessee","Kentucky","Saint Mary's","Miami OH","NC State","SMU","UCLA","Tulsa","Vermont","Colgate","SFA","Grambling"],
+      Midwest: ["Michigan","Illinois","Nebraska","Texas Tech","Alabama","Iowa","Wisconsin","Georgia","Oklahoma","Providence","Santa Clara","Drake","High Point","Wofford","Quinnipiac","Sacred Heart"],
+      East:    ["UConn","Michigan St","Iowa State","N Carolina","Vanderbilt","BYU","Louisville","Utah State","Auburn","Ohio State","UCF","VCU","Yale","UNC Wilm.","Montana","Alabama St"]
+    };
+
+    const DEFAULT_WEIGHTS = { adjEM:35, seedHist:20, travel:10, coaching:10, balance:10, frosh:5, confTourney:5, tempo:5 };
+    const DEFAULT_TOGGLES = { travel:true, coaching:true, balance:true, frosh:true, confTourney:true, tempo:true };
+
+    // ========== MATH / PREDICTION FUNCTIONS ==========
+    function haversine(lat1, lng1, lat2, lng2) {
+      const R = 3959;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function logistic(x) { return 1 / (1 + Math.exp(-x)); }
+
+    function getSeedHistRate(seed1, seed2) {
+      const key1 = `${Math.min(seed1,seed2)}-${Math.max(seed1,seed2)}`;
+      if (SEED_MATCHUPS_R64[key1] !== undefined) {
+        return seed1 <= seed2 ? SEED_MATCHUPS_R64[key1] : 1 - SEED_MATCHUPS_R64[key1];
+      }
+      if (seed1 < seed2) {
+        return Math.max(0.52, Math.min(0.92, (seed2 - seed1) / 20 + 0.5));
+      } else {
+        const opp = Math.max(0.52, Math.min(0.92, (seed1 - seed2) / 20 + 0.5));
+        return 1 - opp;
+      }
+    }
+
+    function calculateWinProb(team1, team2, round, venue, weights, toggles, chaosLevel) {
+      const totalW = Object.values(weights).reduce((a,b)=>a+b,0);
+      const w = {}; Object.keys(weights).forEach(k => w[k] = weights[k]/totalW);
+
+      const adjEMDiff = team1.adjEM - team2.adjEM;
+      const adjEMProb = logistic(adjEMDiff * 0.05);
+      const seedHistProb = getSeedHistRate(team1.seed, team2.seed);
+
+      let prob = w.adjEM * adjEMProb + w.seedHist * seedHistProb;
+      prob = prob / (w.adjEM + w.seedHist);
+
+      let distBonus = 0;
+      if (toggles.travel && venue) {
+        const d1 = haversine(team1.lat, team1.lng, venue.lat, venue.lng);
+        const d2 = haversine(team2.lat, team2.lng, venue.lat, venue.lng);
+        distBonus = Math.max(-0.05, Math.min(0.05, d2 > 0 && d1 > 0 ? Math.log(d2/d1)*0.03 : 0));
+      }
+      prob += distBonus * (w.travel / (1 - w.adjEM - w.seedHist + 0.001));
+
+      let coachBonus = 0;
+      if (toggles.coaching) {
+        coachBonus = Math.max(-0.03, Math.min(0.03, (team1.coachExp - team2.coachExp) * 0.002));
+      }
+      prob += coachBonus;
+
+      let balancePenalty = 0;
+      if (toggles.balance) {
+        if (Math.abs(team1.adjORk - team1.adjDRk) > 40) balancePenalty -= 0.03;
+        if (Math.abs(team2.adjORk - team2.adjDRk) > 40) balancePenalty += 0.03;
+      }
+      prob += balancePenalty;
+
+      let froshPenalty = 0;
+      if (toggles.frosh) {
+        if (team1.froshMin > 0.40) froshPenalty -= 0.02;
+        if (team2.froshMin > 0.40) froshPenalty += 0.02;
+        const roundMult = round - 1;
+        if (team1.froshMin >= 0.30 && team1.froshMin <= 0.40) froshPenalty -= 0.01 * roundMult;
+        if (team2.froshMin >= 0.30 && team2.froshMin <= 0.40) froshPenalty += 0.01 * roundMult;
+      }
+      prob += froshPenalty;
+
+      let confBonus = 0;
+      if (toggles.confTourney) {
+        if (team1.confChamp) confBonus += 0.015;
+        if (team2.confChamp) confBonus -= 0.015;
+      }
+      prob += confBonus;
+
+      let tempoBonus = 0;
+      if (toggles.tempo) {
+        const tempoDiff = Math.abs(team1.adjTempo - team2.adjTempo);
+        if (tempoDiff > 8) {
+          if (team2.adjTempo < team1.adjTempo) tempoBonus += 0.02;
+          else tempoBonus -= 0.02;
+        }
+      }
+      prob += tempoBonus;
+
+      const chaosFactor = chaosLevel / 100;
+      const upsetProb = 1 - getSeedHistRate(team1.seed, team2.seed);
+      prob = (1 - chaosFactor) * prob + chaosFactor * (0.5 + (upsetProb - 0.5) * 0.5);
+      prob = Math.max(0.02, Math.min(0.98, prob));
+
+      const factors = {
+        adjEM: { prob: adjEMProb, label: "AdjEM Differential", value: adjEMDiff.toFixed(1) },
+        seedHist: { prob: seedHistProb, label: "Seed History", value: `${team1.seed} vs ${team2.seed}` },
+        distBonus: { bonus: distBonus, label: "Travel Advantage" },
+        coachBonus: { bonus: coachBonus, label: "Coaching Experience" },
+        balancePenalty: { bonus: balancePenalty, label: "O/D Balance" },
+        froshPenalty: { bonus: froshPenalty, label: "Freshman Minutes" },
+        confBonus: { bonus: confBonus, label: "Conf. Tourney" },
+        tempoBonus: { bonus: tempoBonus, label: "Tempo Mismatch" }
+      };
+      return [prob, factors];
+    }
+
+    function arrangeForBracket(teams16) {
+      const bySeed = {};
+      teams16.forEach(t => { bySeed[t.seed] = t; });
+      const order = [1,16,8,9,5,12,4,13,6,11,3,14,7,10,2,15];
+      return order.map(s => bySeed[s]).filter(Boolean);
+    }
+
+    function computeRegionBracket(teams16, region, weights, toggles, chaosLevel) {
+      const arranged = arrangeForBracket(teams16);
+      const venueR1 = VENUES.r1[region];
+      const venueR2 = VENUES.r2[region];
+      const venueReg = VENUES.regional[region];
+
+      function playRound(teams, round, venue) {
+        const games = [];
+        for (let i = 0; i < teams.length; i += 2) {
+          const t1 = teams[i], t2 = teams[i+1];
+          const [prob1, factors] = calculateWinProb(t1, t2, round, venue, weights, toggles, chaosLevel);
+          const prob2 = 1 - prob1;
+          const winner = prob1 >= 0.5 ? t1 : t2;
+          const isUpset = winner.seed > (i % 2 === 0 ? t1.seed : t2.seed) && winner.seed > Math.min(t1.seed, t2.seed);
+          games.push({ team1: t1, team2: t2, prob1, prob2, winner, isUpset: winner.seed > Math.min(t1.seed, t2.seed), round, venue, factors });
+        }
+        return games;
+      }
+
+      const r64 = playRound(arranged, 1, venueR1);
+      const r32 = playRound(r64.map(g => g.winner), 2, venueR2);
+      const s16 = playRound(r32.map(g => g.winner), 3, venueReg);
+      const e8 = playRound(s16.map(g => g.winner), 4, venueReg);
+      return { r64, r32, s16, e8 };
+    }
+
+    function getTeamsByRegion(regionAssignments) {
+      const teamMap = {};
+      TEAMS.forEach(t => { teamMap[t.name] = t; });
+      const result = {};
+      for (const region of ['South','West','Midwest','East']) {
+        result[region] = (regionAssignments[region] || []).map(name => teamMap[name]).filter(Boolean);
+      }
+      return result;
+    }
+
+    function computeFullBracket(regionAssignments, weights, toggles, chaosLevel) {
+      const teamsByRegion = getTeamsByRegion(regionAssignments);
+      const regions = {};
+      for (const region of ['South','West','Midwest','East']) {
+        regions[region] = computeRegionBracket(teamsByRegion[region], region, weights, toggles, chaosLevel);
+      }
+
+      const southWinner = regions.South.e8[0].winner;
+      const eastWinner = regions.East.e8[0].winner;
+      const midwestWinner = regions.Midwest.e8[0].winner;
+      const westWinner = regions.West.e8[0].winner;
+
+      const f4v = VENUES.finalFour;
+      const [f4p1, f4f1] = calculateWinProb(southWinner, eastWinner, 5, f4v, weights, toggles, chaosLevel);
+      const [f4p2, f4f2] = calculateWinProb(midwestWinner, westWinner, 5, f4v, weights, toggles, chaosLevel);
+      const f4game1 = { team1: southWinner, team2: eastWinner, prob1: f4p1, prob2: 1-f4p1, winner: f4p1>=0.5?southWinner:eastWinner, isUpset: false, round: 5, venue: f4v, factors: f4f1, label:"South vs East" };
+      const f4game2 = { team1: midwestWinner, team2: westWinner, prob1: f4p2, prob2: 1-f4p2, winner: f4p2>=0.5?midwestWinner:westWinner, isUpset: false, round: 5, venue: f4v, factors: f4f2, label:"Midwest vs West" };
+
+      const champT1 = f4game1.winner;
+      const champT2 = f4game2.winner;
+      const [cp, cf] = calculateWinProb(champT1, champT2, 6, f4v, weights, toggles, chaosLevel);
+      const championship = { team1: champT1, team2: champT2, prob1: cp, prob2: 1-cp, winner: cp>=0.5?champT1:champT2, isUpset: false, round: 6, venue: f4v, factors: cf, label:"Championship" };
+
+      return { ...regions, f4: [f4game1, f4game2], championship };
+    }
+
+    // ========== MONTE CARLO ==========
+    function runMonteCarlo(regionAssignments, weights, toggles, chaosLevel, numSims = 10000) {
+      const teamsByRegion = getTeamsByRegion(regionAssignments);
+      const results = {};
+      TEAMS.forEach(t => { results[t.name] = { r64:0, r32:0, s16:0, e8:0, f4:0, champ:0 }; });
+
+      for (let sim = 0; sim < numSims; sim++) {
+        const regionWinners = {};
+        for (const region of ['South','West','Midwest','East']) {
+          const arranged = arrangeForBracket(teamsByRegion[region]);
+          let current = [...arranged];
+          const venues = [VENUES.r1[region], VENUES.r2[region], VENUES.regional[region], VENUES.regional[region]];
+          const roundKeys = ['r64','r32','s16','e8'];
+
+          for (let r = 0; r < 4; r++) {
+            const next = [];
+            for (let i = 0; i < current.length; i += 2) {
+              const [prob] = calculateWinProb(current[i], current[i+1], r+1, venues[r], weights, toggles, chaosLevel);
+              const winner = Math.random() < prob ? current[i] : current[i+1];
+              if (results[winner.name]) results[winner.name][roundKeys[r]]++;
+              next.push(winner);
+            }
+            current = next;
+          }
+          regionWinners[region] = current[0];
+        }
+
+        const f4v = VENUES.finalFour;
+        const [f4p1] = calculateWinProb(regionWinners.South, regionWinners.East, 5, f4v, weights, toggles, chaosLevel);
+        const [f4p2] = calculateWinProb(regionWinners.Midwest, regionWinners.West, 5, f4v, weights, toggles, chaosLevel);
+        const f4w1 = Math.random() < f4p1 ? regionWinners.South : regionWinners.East;
+        const f4w2 = Math.random() < f4p2 ? regionWinners.Midwest : regionWinners.West;
+        if (results[f4w1.name]) results[f4w1.name].f4++;
+        if (results[f4w2.name]) results[f4w2.name].f4++;
+
+        const [cp] = calculateWinProb(f4w1, f4w2, 6, f4v, weights, toggles, chaosLevel);
+        const champ = Math.random() < cp ? f4w1 : f4w2;
+        if (results[champ.name]) results[champ.name].champ++;
+      }
+
+      Object.keys(results).forEach(name => {
+        Object.keys(results[name]).forEach(r => {
+          results[name][r] = results[name][r] / numSims;
+        });
+      });
+      return results;
+    }
+
+    // ========== STATE MANAGEMENT ==========
+    const initialState = {
+      regionAssignments: DEFAULT_REGION_ASSIGNMENTS,
+      weights: DEFAULT_WEIGHTS,
+      toggles: DEFAULT_TOGGLES,
+      chaosLevel: 25,
+      bracket: null,
+      simResults: null,
+      simProgress: 0,
+      isSimRunning: false,
+      activeTab: 'predictions',
+      activeRegion: 'South',
+      selectedGame: null,
+      editingTeamSlot: null,
+    };
+
+    function reducer(state, action) {
+      switch (action.type) {
+        case 'SET_TAB': return { ...state, activeTab: action.tab };
+        case 'SET_REGION': return { ...state, activeRegion: action.region };
+        case 'SET_BRACKET': return { ...state, bracket: action.bracket };
+        case 'SET_WEIGHT': return { ...state, weights: { ...state.weights, [action.key]: action.value } };
+        case 'SET_TOGGLE': return { ...state, toggles: { ...state.toggles, [action.key]: action.value } };
+        case 'SET_CHAOS': return { ...state, chaosLevel: action.value };
+        case 'SET_SIM_RESULTS': return { ...state, simResults: action.results, isSimRunning: false };
+        case 'SET_SIM_RUNNING': return { ...state, isSimRunning: action.running, simProgress: action.progress || 0 };
+        case 'SET_SELECTED_GAME': return { ...state, selectedGame: action.game };
+        case 'SET_EDITING_SLOT': return { ...state, editingTeamSlot: action.slot };
+        case 'ASSIGN_TEAM': {
+          const { region, seed, teamName } = action;
+          const oldAssignments = { ...state.regionAssignments };
+          // Find if this team is already assigned somewhere and swap
+          let oldRegion = null, oldIdx = -1;
+          for (const r of ['South','West','Midwest','East']) {
+            const idx = oldAssignments[r].findIndex(n => n === teamName);
+            if (idx !== -1) { oldRegion = r; oldIdx = idx; break; }
+          }
+          const newRegionArr = [...oldAssignments[region]];
+          const targetIdx = newRegionArr.findIndex((_, i) => {
+            const slot = TEAMS.find(t => t.name === newRegionArr[i]);
+            return slot && slot.seed === seed;
+          });
+          if (oldRegion && oldRegion !== region && targetIdx !== -1) {
+            const displaced = newRegionArr[targetIdx];
+            const oldArr = [...oldAssignments[oldRegion]];
+            oldArr[oldIdx] = displaced;
+            newRegionArr[targetIdx] = teamName;
+            return { ...state, regionAssignments: { ...oldAssignments, [oldRegion]: oldArr, [region]: newRegionArr } };
+          } else if (targetIdx !== -1) {
+            newRegionArr[targetIdx] = teamName;
+            return { ...state, regionAssignments: { ...oldAssignments, [region]: newRegionArr } };
+          }
+          return state;
+        }
+        case 'RESET_ASSIGNMENTS': return { ...state, regionAssignments: DEFAULT_REGION_ASSIGNMENTS };
+        default: return state;
+      }
+    }
+
+    // ========== UTILITY COMPONENTS ==========
+    function probColor(p) {
+      if (p >= 0.70) return 'text-green-400';
+      if (p >= 0.55) return 'text-yellow-400';
+      return 'text-red-400';
+    }
+
+    function formatPct(p) { return (p * 100).toFixed(1) + '%'; }
+
+    function getTeamRegion(regionAssignments, teamName) {
+      for (const r of ['South','West','Midwest','East']) {
+        if (regionAssignments[r].includes(teamName)) return r;
+      }
+      return '?';
+    }
+
+    // ========== GAME CARD ==========
+    function GameCard({ game, onClick, compact }) {
+      if (!game) return <div className="h-14 bg-gray-800 rounded border border-gray-700 opacity-30" />;
+      const { team1, team2, prob1, prob2, winner, isUpset } = game;
+      const w1 = winner.name === team1.name;
+      const w2 = winner.name === team2.name;
+      return (
+        <div
+          className="bg-gray-900 border border-gray-700 rounded cursor-pointer hover:border-green-600 transition-colors"
+          style={{ minWidth: compact ? 140 : 170 }}
+          onClick={() => onClick && onClick(game)}
+        >
+          {[{t: team1, p: prob1, won: w1}, {t: team2, p: prob2, won: w2}].map(({t, p, won}, i) => (
+            <div key={i} className={`flex items-center gap-1 px-2 py-1 ${won ? 'bg-green-900/30' : 'opacity-50'} ${i===0 ? 'rounded-t' : 'rounded-b border-t border-gray-700'}`}>
+              <span className="text-gray-400 text-xs w-4 shrink-0">{t.seed}</span>
+              <span className={`font-condensed text-sm flex-1 truncate ${won ? 'text-white font-semibold' : 'text-gray-400'}`}>{t.name}</span>
+              <span className={`text-xs font-mono ${probColor(p)}`}>{formatPct(p)}</span>
+            </div>
+          ))}
+          {isUpset && (
+            <div className="px-2 pb-1">
+              <span className="bg-red-900/60 text-red-300 text-xs rounded px-1">UPSET</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ========== MATCHUP MODAL ==========
+    function MatchupModal({ game, onClose }) {
+      if (!game) return null;
+      const { team1, team2, prob1, prob2, winner, factors, venue, round } = game;
+      const roundLabels = ['', 'Round of 64', 'Round of 32', 'Sweet 16', 'Elite 8', 'Final Four', 'Championship'];
+
+      return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+          <div className="bg-gray-900 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+              <div>
+                <div className="font-condensed text-lg text-green-400">{roundLabels[round] || 'Matchup'}</div>
+                {venue && <div className="text-xs text-gray-400">{venue.arena} — {venue.city}</div>}
+              </div>
+              <button onClick={onClose} className="text-gray-400 hover:text-white text-xl px-2">✕</button>
+            </div>
+
+            <div className="p-4 grid grid-cols-2 gap-4">
+              {[{t: team1, p: prob1}, {t: team2, p: prob2}].map(({t, p}, i) => (
+                <div key={i} className={`rounded-lg p-3 border ${winner.name === t.name ? 'border-green-600 bg-green-900/20' : 'border-gray-700 bg-gray-800'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-gray-700 text-white text-xs rounded px-1.5 py-0.5 font-bold">#{t.seed}</span>
+                    <span className="font-condensed text-lg font-bold">{t.name}</span>
+                    {winner.name === t.name && <span className="text-green-400 text-xs">WIN</span>}
+                  </div>
+                  <div className="text-xs text-gray-400 mb-2">{t.conf} • {t.wins}-{t.losses}</div>
+                  <div className={`text-2xl font-bold font-condensed ${probColor(p)}`}>{formatPct(p)}</div>
+                  <div className="mt-1 bg-gray-700 rounded-full h-2">
+                    <div className={`h-2 rounded-full ${p >= 0.7 ? 'bg-green-500' : p >= 0.55 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{width: formatPct(p)}} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-4 pb-2">
+              <div className="text-sm font-semibold text-gray-300 mb-2">Win Probability Factors</div>
+              <div className="space-y-1">
+                {factors && Object.entries(factors).map(([key, f]) => {
+                  const val = f.prob !== undefined ? (f.prob - 0.5) : (f.bonus || 0);
+                  const sign = val >= 0 ? '+' : '';
+                  return (
+                    <div key={key} className="flex justify-between items-center text-xs py-1 border-b border-gray-800">
+                      <span className="text-gray-400">{f.label}</span>
+                      <div className="flex items-center gap-2">
+                        {f.value && <span className="text-gray-500">{f.value}</span>}
+                        <span className={val >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          {f.prob !== undefined ? formatPct(f.prob) : `${sign}${(val*100).toFixed(1)}%`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="px-4 pb-4 mt-2">
+              <div className="text-sm font-semibold text-gray-300 mb-2">Key Stats</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500">
+                      <th className="text-left py-1">Stat</th>
+                      <th className="text-center py-1">{team1.name}</th>
+                      <th className="text-center py-1">{team2.name}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ['AdjEM', team1.adjEM.toFixed(1), team2.adjEM.toFixed(1)],
+                      ['AdjO Rank', '#'+team1.adjORk, '#'+team2.adjORk],
+                      ['AdjD Rank', '#'+team1.adjDRk, '#'+team2.adjDRk],
+                      ['Tempo', team1.adjTempo.toFixed(1), team2.adjTempo.toFixed(1)],
+                      ['Coach Exp (yrs)', team1.coachExp, team2.coachExp],
+                      ['Frosh Min %', formatPct(team1.froshMin), formatPct(team2.froshMin)],
+                      ['Record', `${team1.wins}-${team1.losses}`, `${team2.wins}-${team2.losses}`],
+                      ['Q1 Record', `${team1.q1w}-${team1.q1l}`, `${team2.q1w}-${team2.q1l}`],
+                    ].map(([label, v1, v2], i) => (
+                      <tr key={i} className="border-t border-gray-800">
+                        <td className="py-1 text-gray-400">{label}</td>
+                        <td className="py-1 text-center text-white">{v1}</td>
+                        <td className="py-1 text-center text-white">{v2}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== BRACKET VIEW ==========
+    function BracketColumn({ title, games, onGameClick, compact }) {
+      return (
+        <div className="flex flex-col" style={{ minWidth: compact ? 155 : 185 }}>
+          <div className="text-center text-xs font-condensed text-gray-400 mb-2 uppercase tracking-wider">{title}</div>
+          <div className="flex flex-col gap-2 flex-1 justify-around">
+            {games.map((game, i) => (
+              <GameCard key={i} game={game} onClick={onGameClick} compact={compact} />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function RegionBracket({ regionData, onGameClick }) {
+      if (!regionData) return <div className="text-gray-400">Loading...</div>;
+      const { r64, r32, s16, e8 } = regionData;
+      return (
+        <div className="overflow-x-auto pb-2">
+          <div className="flex gap-3" style={{ minWidth: 700 }}>
+            <BracketColumn title="Round of 64" games={r64} onGameClick={onGameClick} />
+            <BracketColumn title="Round of 32" games={r32} onGameClick={onGameClick} />
+            <BracketColumn title="Sweet 16" games={s16} onGameClick={onGameClick} />
+            <BracketColumn title="Elite 8" games={e8} onGameClick={onGameClick} />
+          </div>
+        </div>
+      );
+    }
+
+    function FinalFourView({ bracket, onGameClick }) {
+      if (!bracket) return null;
+      const { f4, championship } = bracket;
+      return (
+        <div className="mt-4">
+          <div className="text-center font-condensed text-xl text-yellow-400 mb-3" style={{fontFamily:'Barlow Condensed, sans-serif'}}>
+            Final Four & Championship — Lucas Oil Stadium, Indianapolis
+          </div>
+          <div className="flex flex-wrap gap-6 justify-center">
+            <div>
+              <div className="text-xs text-gray-400 text-center mb-1 uppercase tracking-wide">Semifinal 1 (South vs East)</div>
+              {f4[0] && <GameCard game={f4[0]} onClick={onGameClick} />}
+            </div>
+            <div>
+              <div className="text-xs text-gray-400 text-center mb-1 uppercase tracking-wide">Semifinal 2 (Midwest vs West)</div>
+              {f4[1] && <GameCard game={f4[1]} onClick={onGameClick} />}
+            </div>
+            <div>
+              <div className="text-xs text-gray-400 text-center mb-1 uppercase tracking-wide">Championship</div>
+              {championship && (
+                <div className="relative">
+                  <GameCard game={championship} onClick={onGameClick} />
+                  <div className="mt-1 text-center">
+                    <span className="bg-yellow-700/60 text-yellow-300 text-xs rounded px-2 py-0.5 font-condensed">
+                      PREDICTED CHAMPION: {championship.winner.name} ({championship.winner.seed})
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function PredictionsTab({ bracket, activeRegion, setRegion, onGameClick }) {
+      const regions = ['South', 'West', 'Midwest', 'East', 'Final Four'];
+      return (
+        <div>
+          <div className="flex gap-1 mb-4 flex-wrap">
+            {regions.map(r => (
+              <button
+                key={r}
+                onClick={() => setRegion(r)}
+                className={`px-3 py-1.5 rounded font-condensed text-sm transition-colors ${activeRegion === r ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {activeRegion === 'Final Four' ? (
+            <FinalFourView bracket={bracket} onGameClick={onGameClick} />
+          ) : (
+            <div>
+              <div className="text-sm text-gray-400 mb-3">
+                {bracket && bracket[activeRegion] && bracket[activeRegion].e8 && (
+                  <span>
+                    Regional Winner: <span className="text-green-400 font-semibold">
+                      {bracket[activeRegion].e8[0]?.winner?.name} (#{bracket[activeRegion].e8[0]?.winner?.seed})
+                    </span>
+                    {' '}— {VENUES.regional[activeRegion]?.arena}, {VENUES.regional[activeRegion]?.city}
+                  </span>
+                )}
+              </div>
+              <RegionBracket regionData={bracket?.[activeRegion]} onGameClick={onGameClick} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ========== BRACKET INPUT TAB ==========
+    function BracketInputTab({ regionAssignments, dispatch }) {
+      const [editingSlot, setEditingSlot] = useState(null);
+      const teamMap = {};
+      TEAMS.forEach(t => { teamMap[t.name] = t; });
+
+      const allSeeds = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16];
+      const regions = ['South','West','Midwest','East'];
+
+      const getTeamForSeed = (region, seed) => {
+        const names = regionAssignments[region] || [];
+        return names.find(n => teamMap[n] && teamMap[n].seed === seed);
+      };
+
+      const availableTeamsForSeed = (seed, region, currentName) => {
+        return TEAMS.filter(t => t.seed === seed && t.name !== currentName);
+      };
+
+      return (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <div className="font-condensed text-xl" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Bracket Input — Edit Team Assignments</div>
+            <button
+              className="bg-gray-700 hover:bg-gray-600 text-white text-sm px-3 py-1.5 rounded"
+              onClick={() => dispatch({ type: 'RESET_ASSIGNMENTS' })}
+            >
+              Reset to Default
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {regions.map(region => (
+              <div key={region} className="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                <div className="font-condensed text-lg text-green-400 mb-2" style={{fontFamily:'Barlow Condensed, sans-serif'}}>
+                  {region} Region
+                  <span className="text-xs text-gray-500 ml-2">— {VENUES.regional[region]?.city}</span>
+                </div>
+                <div className="space-y-1">
+                  {allSeeds.map(seed => {
+                    const teamName = getTeamForSeed(region, seed);
+                    const team = teamName ? teamMap[teamName] : null;
+                    const slotKey = `${region}-${seed}`;
+                    const isEditing = editingSlot === slotKey;
+                    const options = availableTeamsForSeed(seed, region, teamName);
+
+                    return (
+                      <div key={seed} className="flex items-center gap-2">
+                        <span className="text-gray-500 text-xs w-5 text-right shrink-0">{seed}</span>
+                        {isEditing ? (
+                          <select
+                            autoFocus
+                            className="flex-1 bg-gray-800 border border-green-600 text-white text-xs rounded px-1 py-0.5"
+                            value={teamName || ''}
+                            onChange={e => {
+                              dispatch({ type: 'ASSIGN_TEAM', region, seed, teamName: e.target.value });
+                              setEditingSlot(null);
+                            }}
+                            onBlur={() => setEditingSlot(null)}
+                          >
+                            {teamName && <option value={teamName}>{teamName} (current)</option>}
+                            {options.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+                          </select>
+                        ) : (
+                          <button
+                            className="flex-1 text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 rounded px-2 py-1 text-xs flex justify-between items-center"
+                            onClick={() => setEditingSlot(slotKey)}
+                          >
+                            <span className="font-condensed text-white">{teamName || '—'}</span>
+                            {team && (
+                              <span className="text-gray-500">{team.wins}-{team.losses} | {team.adjEM.toFixed(1)}</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ========== ANALYTICS TAB ==========
+    function AnalyticsTab({ bracket, regionAssignments, weights, toggles, chaosLevel }) {
+      const [simResults, setSimResults] = useState(null);
+      const [isRunning, setIsRunning] = useState(false);
+      const [sortKey, setSortKey] = useState('champ');
+      const [sortDir, setSortDir] = useState('desc');
+
+      const teamMap = {};
+      TEAMS.forEach(t => { teamMap[t.name] = t; });
+
+      const runSim = useCallback(() => {
+        setIsRunning(true);
+        setTimeout(() => {
+          const results = runMonteCarlo(regionAssignments, weights, toggles, chaosLevel, 10000);
+          setSimResults(results);
+          setIsRunning(false);
+        }, 50);
+      }, [regionAssignments, weights, toggles, chaosLevel]);
+
+      // Upset candidates from r64
+      const upsets = [];
+      if (bracket) {
+        for (const region of ['South','West','Midwest','East']) {
+          const r64 = bracket[region]?.r64 || [];
+          r64.forEach(game => {
+            if (game && game.team2 && (1 - game.prob1) > 0.35) {
+              upsets.push({ ...game, region, upsetProb: 1 - game.prob1 });
+            }
+          });
+        }
+        upsets.sort((a,b) => b.upsetProb - a.upsetProb);
+      }
+
+      // Vulnerability: 1-4 seeds
+      const vulnerableTeams = [];
+      for (const region of ['South','West','Midwest','East']) {
+        const names = regionAssignments[region] || [];
+        names.forEach(name => {
+          const t = teamMap[name];
+          if (t && t.seed <= 4) {
+            const risks = [];
+            if (t.adjEM < 20) risks.push('Low AdjEM (<20)');
+            if (t.froshMin > 0.35) risks.push('High Frosh Min (>35%)');
+            if (t.coachExp < 10) risks.push('Low Coach Exp (<10yr)');
+            if (Math.abs(t.adjORk - t.adjDRk) > 40) risks.push('One-Dimensional O/D');
+            if (risks.length >= 2) {
+              vulnerableTeams.push({ team: t, risks, region });
+            }
+          }
+        });
+      }
+
+      // Sort sim table
+      const sortedTeams = simResults
+        ? TEAMS.slice().sort((a, b) => {
+            const av = simResults[a.name]?.[sortKey] || 0;
+            const bv = simResults[b.name]?.[sortKey] || 0;
+            return sortDir === 'desc' ? bv - av : av - bv;
+          })
+        : TEAMS.slice().sort((a,b) => a.seed - b.seed || a.name.localeCompare(b.name));
+
+      const handleSort = (key) => {
+        if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+        else { setSortKey(key); setSortDir('desc'); }
+      };
+
+      return (
+        <div className="space-y-8">
+          {/* Monte Carlo Table */}
+          <div>
+            <div className="flex items-center gap-4 mb-3">
+              <div className="font-condensed text-xl" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Championship Probability</div>
+              <button
+                onClick={runSim}
+                disabled={isRunning}
+                className="bg-green-700 hover:bg-green-600 disabled:bg-gray-700 text-white text-sm px-4 py-1.5 rounded"
+              >
+                {isRunning ? 'Running...' : 'Run Monte Carlo (10,000 sims)'}
+              </button>
+              {isRunning && <div className="text-xs text-gray-400 animate-pulse">Simulating...</div>}
+            </div>
+            {!simResults && !isRunning && (
+              <div className="text-gray-500 text-sm">Click "Run Monte Carlo" to generate win probabilities across 10,000 simulated tournaments.</div>
+            )}
+            {simResults && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700">
+                      <th className="text-left py-2 px-2">Team</th>
+                      <th className="text-left py-2 px-2">Seed</th>
+                      <th className="text-left py-2 px-2">Region</th>
+                      {[['champ','Champion'],['f4','Final Four'],['e8','Elite 8'],['s16','Sweet 16'],['r32','Rd 32'],['r64','Rd 64']].map(([k,label]) => (
+                        <th key={k} className="text-right py-2 px-2 cursor-pointer hover:text-white select-none" onClick={() => handleSort(k)}>
+                          {label} {sortKey===k ? (sortDir==='desc'?'↓':'↑') : ''}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTeams.map((team, i) => {
+                      const r = simResults[team.name] || {};
+                      const teamRegion = getTeamRegion(regionAssignments, team.name);
+                      return (
+                        <tr key={team.name} className={`border-b border-gray-800 ${i % 2 === 0 ? 'bg-gray-900/30' : ''}`}>
+                          <td className="py-1.5 px-2 font-condensed text-white">{team.name}</td>
+                          <td className="py-1.5 px-2 text-gray-400">#{team.seed}</td>
+                          <td className="py-1.5 px-2 text-gray-400">{teamRegion}</td>
+                          {['champ','f4','e8','s16','r32','r64'].map(k => (
+                            <td key={k} className={`py-1.5 px-2 text-right font-mono ${probColor(r[k]||0)}`}>
+                              {r[k] !== undefined ? formatPct(r[k]) : '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Upset Watch */}
+          <div>
+            <div className="font-condensed text-xl mb-3" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Upset Watch — R64 Games (&gt;35% lower seed chance)</div>
+            {upsets.length === 0 ? (
+              <div className="text-gray-500 text-sm">No R64 upsets predicted at current settings.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {upsets.slice(0,10).map((g, i) => (
+                  <div key={i} className="bg-gray-900 border border-red-900/40 rounded-lg p-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="text-xs text-gray-400 mb-1">{g.region} Region</div>
+                        <div className="font-condensed text-sm">
+                          <span className="text-gray-400">#{g.team1.seed} {g.team1.name}</span>
+                          <span className="text-gray-600 mx-2">vs</span>
+                          <span className="text-white font-semibold">#{g.team2.seed} {g.team2.name}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-red-400 font-bold text-lg font-condensed">{formatPct(g.upsetProb)}</div>
+                        <div className="text-xs text-gray-500">upset prob</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 bg-gray-700 rounded-full h-1.5">
+                      <div className="bg-red-500 h-1.5 rounded-full" style={{width: formatPct(g.upsetProb)}} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Vulnerability */}
+          <div>
+            <div className="font-condensed text-xl mb-3" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Vulnerability Index — Top Seeds at Risk</div>
+            {vulnerableTeams.length === 0 ? (
+              <div className="text-gray-500 text-sm">No top seeds (1-4) with 2+ risk factors detected.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {vulnerableTeams.map(({team, risks, region}, i) => (
+                  <div key={i} className="bg-gray-900 border border-yellow-900/40 rounded-lg p-3">
+                    <div className="flex justify-between">
+                      <div>
+                        <div className="font-condensed text-white font-semibold">#{team.seed} {team.name}</div>
+                        <div className="text-xs text-gray-400">{region} Region • {team.conf}</div>
+                      </div>
+                      <span className="text-yellow-400 text-sm font-bold">{risks.length} risks</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {risks.map((r, j) => (
+                        <span key={j} className="bg-yellow-900/40 text-yellow-300 text-xs rounded px-2 py-0.5">{r}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ========== SETTINGS TAB ==========
+    function SettingsTab({ weights, toggles, chaosLevel, dispatch, bracket, regionAssignments }) {
+      const weightKeys = [
+        ['adjEM', 'AdjEM Differential'],
+        ['seedHist', 'Seed History'],
+        ['travel', 'Travel Distance'],
+        ['coaching', 'Coaching Experience'],
+        ['balance', 'Offensive/Defensive Balance'],
+        ['frosh', 'Freshman Minutes'],
+        ['confTourney', 'Conf. Tourney Champion'],
+        ['tempo', 'Tempo Mismatch'],
+      ];
+      const toggleKeys = [
+        ['travel', 'Travel Distance'],
+        ['coaching', 'Coaching Experience'],
+        ['balance', 'O/D Balance'],
+        ['frosh', 'Freshman Minutes'],
+        ['confTourney', 'Conf. Tourney'],
+        ['tempo', 'Tempo'],
+      ];
+
+      const totalWeight = Object.values(weights).reduce((a,b)=>a+b,0);
+
+      const exportBracket = () => {
+        const data = { bracket, regionAssignments, weights, toggles, chaosLevel, exportedAt: new Date().toISOString() };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'march-madness-2026.json';
+        a.click(); URL.revokeObjectURL(url);
+      };
+
+      const copyPredictions = () => {
+        if (!bracket) { alert('Predictions not ready yet.'); return; }
+        let text = '2026 NCAA March Madness Predictions\n';
+        text += '=====================================\n\n';
+        for (const region of ['South','West','Midwest','East']) {
+          const e8 = bracket[region]?.e8?.[0];
+          if (e8) text += `${region} Regional Winner: ${e8.winner.name} (#${e8.winner.seed})\n`;
+        }
+        if (bracket.f4) {
+          text += `\nFinal Four:\n`;
+          bracket.f4.forEach(g => { text += `  ${g.winner.name} (#${g.winner.seed})\n`; });
+        }
+        if (bracket.championship) {
+          text += `\nPredicted Champion: ${bracket.championship.winner.name} (#${bracket.championship.winner.seed})\n`;
+        }
+        navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!')).catch(() => alert('Failed to copy.'));
+      };
+
+      return (
+        <div className="space-y-8 max-w-2xl">
+          {/* Factor Weights */}
+          <div>
+            <div className="font-condensed text-xl mb-1" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Factor Weights</div>
+            <div className="text-xs text-gray-400 mb-4">Weights auto-normalize to 100%. Total: {totalWeight}</div>
+            <div className="space-y-4">
+              {weightKeys.map(([key, label]) => (
+                <div key={key}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-sm text-gray-300">{label}</span>
+                    <span className="text-sm font-mono text-green-400">{weights[key]} ({((weights[key]/totalWeight)*100).toFixed(0)}%)</span>
+                  </div>
+                  <input
+                    type="range" min="0" max="100" step="1"
+                    value={weights[key]}
+                    onChange={e => dispatch({ type: 'SET_WEIGHT', key, value: +e.target.value })}
+                    className="w-full accent-green-600"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chaos Slider */}
+          <div>
+            <div className="font-condensed text-xl mb-1" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Chaos Level</div>
+            <div className="text-xs text-gray-400 mb-4">0 = Pure chalk | 50 = Balanced | 100 = Maximum chaos</div>
+            <div className="flex justify-between mb-1">
+              <span className="text-sm text-gray-300">Chaos</span>
+              <span className="text-sm font-mono text-yellow-400">{chaosLevel}</span>
+            </div>
+            <input
+              type="range" min="0" max="100" step="1"
+              value={chaosLevel}
+              onChange={e => dispatch({ type: 'SET_CHAOS', value: +e.target.value })}
+              className="w-full accent-yellow-500"
+            />
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>Pure Chalk</span><span>Balanced</span><span>Max Chaos</span>
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div>
+            <div className="font-condensed text-xl mb-4" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Heuristic Toggles</div>
+            <div className="grid grid-cols-2 gap-3">
+              {toggleKeys.map(([key, label]) => (
+                <label key={key} className="flex items-center gap-3 cursor-pointer bg-gray-900 border border-gray-700 rounded p-2 hover:border-gray-500">
+                  <input
+                    type="checkbox"
+                    checked={toggles[key]}
+                    onChange={e => dispatch({ type: 'SET_TOGGLE', key, value: e.target.checked })}
+                    className="w-4 h-4 accent-green-600"
+                  />
+                  <span className="text-sm text-gray-300">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Export */}
+          <div>
+            <div className="font-condensed text-xl mb-4" style={{fontFamily:'Barlow Condensed, sans-serif'}}>Export / Share</div>
+            <div className="flex gap-3">
+              <button onClick={exportBracket} className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm">
+                Export Bracket as JSON
+              </button>
+              <button onClick={copyPredictions} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">
+                Copy Predictions Summary
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== ROOT APP ==========
+    function App() {
+      const [state, dispatch] = useReducer(reducer, initialState);
+      const { regionAssignments, weights, toggles, chaosLevel, activeTab, activeRegion, selectedGame } = state;
+
+      const bracket = useMemo(() => {
+        try {
+          return computeFullBracket(regionAssignments, weights, toggles, chaosLevel);
+        } catch(e) {
+          console.error('Bracket compute error:', e);
+          return null;
+        }
+      }, [regionAssignments, weights, toggles, chaosLevel]);
+
+      const setRegion = useCallback((r) => dispatch({ type: 'SET_REGION', region: r }), []);
+      const setTab = useCallback((t) => dispatch({ type: 'SET_TAB', tab: t }), []);
+
+      const tabs = [
+        { key: 'input', label: 'Bracket Input' },
+        { key: 'predictions', label: 'Predictions' },
+        { key: 'analytics', label: 'Analytics' },
+        { key: 'settings', label: 'Settings' },
+      ];
+
+      return (
+        <div className="min-h-screen" style={{ background: '#0D1117' }}>
+          {/* Header */}
+          <div className="sticky top-0 z-40 border-b border-gray-800" style={{ background: '#0D1117' }}>
+            <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
+              <div>
+                <div className="font-condensed text-2xl font-bold text-white" style={{fontFamily:'Barlow Condensed, sans-serif'}}>
+                  🏀 2026 March Madness Predictor
+                </div>
+                <div className="text-xs text-gray-400">Predicted bracket • March 15, 2026</div>
+              </div>
+              {bracket && bracket.championship && (
+                <div className="text-right hidden sm:block">
+                  <div className="text-xs text-gray-400">Predicted Champion</div>
+                  <div className="font-condensed text-lg text-yellow-400" style={{fontFamily:'Barlow Condensed, sans-serif'}}>
+                    {bracket.championship.winner.name}
+                    <span className="text-gray-500 text-sm ml-1">(#{bracket.championship.winner.seed})</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Tabs */}
+            <div className="max-w-screen-xl mx-auto px-4 flex gap-0 border-t border-gray-800">
+              {tabs.map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setTab(tab.key)}
+                  className={`px-4 py-2.5 text-sm font-condensed transition-colors border-b-2 ${activeTab === tab.key ? 'border-green-500 text-green-400' : 'border-transparent text-gray-400 hover:text-gray-200'}`}
+                  style={{fontFamily:'Barlow Condensed, sans-serif'}}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="max-w-screen-xl mx-auto px-4 py-6">
+            {activeTab === 'input' && (
+              <BracketInputTab
+                regionAssignments={regionAssignments}
+                dispatch={dispatch}
+              />
+            )}
+            {activeTab === 'predictions' && (
+              <PredictionsTab
+                bracket={bracket}
+                activeRegion={activeRegion}
+                setRegion={setRegion}
+                onGameClick={game => dispatch({ type: 'SET_SELECTED_GAME', game })}
+              />
+            )}
+            {activeTab === 'analytics' && (
+              <AnalyticsTab
+                bracket={bracket}
+                regionAssignments={regionAssignments}
+                weights={weights}
+                toggles={toggles}
+                chaosLevel={chaosLevel}
+              />
+            )}
+            {activeTab === 'settings' && (
+              <SettingsTab
+                weights={weights}
+                toggles={toggles}
+                chaosLevel={chaosLevel}
+                dispatch={dispatch}
+                bracket={bracket}
+                regionAssignments={regionAssignments}
+              />
+            )}
+          </div>
+
+          {/* Modal */}
+          {selectedGame && (
+            <MatchupModal
+              game={selectedGame}
+              onClose={() => dispatch({ type: 'SET_SELECTED_GAME', game: null })}
+            />
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
