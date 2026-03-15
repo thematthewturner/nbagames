@@ -47,11 +47,12 @@
         "8":  { "name": "Mississippi St","conf":"SEC",     "lat": 33.456, "lng": -88.793, "coachExp": 3 },
         "9":  { "name": "Dayton",       "conf": "A-10",    "lat": 39.740, "lng": -84.181, "coachExp": 5 },
         "10": { "name": "Missouri",     "conf": "SEC",     "lat": 38.939, "lng": -92.328, "coachExp": 2 },
-        "11": { "name": "Drake",        "conf": "MVC",     "lat": 41.603, "lng": -93.652, "coachExp": 8 },
+        "11a": { "name": "Texas",        "conf": "Big 12",  "lat": 30.284, "lng": -97.733, "coachExp": 2 },
+        "11b": { "name": "NC State",     "conf": "ACC",     "lat": 35.787, "lng": -78.686, "coachExp": 3 },
         "12": { "name": "Liberty",      "conf": "CUSA",    "lat": 37.355, "lng": -79.177, "coachExp": 6 },
         "13": { "name": "High Point",   "conf": "Big South","lat":35.959, "lng": -80.006, "coachExp": 11 },
         "14": { "name": "Wofford",      "conf": "SoCon",   "lat": 34.929, "lng": -81.931, "coachExp": 4 },
-        "15": { "name": "Lehigh",       "conf": "Patriot", "lat": 40.607, "lng": -75.378, "coachExp": 3 },
+        "15": { "name": "TBD",          "conf": "TBD",     "lat": 0,      "lng": 0,       "coachExp": 0 },
         "16": { "name": "SIU Edwardsville","conf":"OVC",   "lat": 38.790, "lng": -89.951, "coachExp": 1 }
       }
     },
@@ -74,7 +75,8 @@
         "13": { "name": "Troy",         "conf": "Sun Belt","lat": 31.808, "lng": -85.970, "coachExp": 9 },
         "14": { "name": "Colgate",      "conf": "Patriot", "lat": 42.820, "lng": -75.537, "coachExp": 11 },
         "15": { "name": "South Dakota St","conf":"Summit", "lat": 44.321, "lng": -96.787, "coachExp": 6 },
-        "16": { "name": "Norfolk St",   "conf": "MEAC",    "lat": 36.848, "lng": -76.288, "coachExp": 4 }
+        "16a": { "name": "Prairie View A&M","conf": "SWAC", "lat": 30.094, "lng": -95.991, "coachExp": 8 },
+        "16b": { "name": "Lehigh",       "conf": "Patriot", "lat": 40.607, "lng": -75.378, "coachExp": 3 }
       }
     },
     "Midwest": {
@@ -91,18 +93,28 @@
         "8":  { "name": "Cincinnati",   "conf": "Big 12",  "lat": 39.131, "lng": -84.516, "coachExp": 3 },
         "9":  { "name": "Nebraska",     "conf": "Big Ten", "lat": 40.820, "lng": -96.708, "coachExp": 6 },
         "10": { "name": "Arkansas",     "conf": "SEC",     "lat": 36.068, "lng": -94.174, "coachExp": 4 },
-        "11": { "name": "Xavier",       "conf": "Big East","lat": 39.152, "lng": -84.474, "coachExp": 4 },
+        "11a": { "name": "Miami (Ohio)", "conf": "MAC",     "lat": 39.508, "lng": -84.733, "coachExp": 7 },
+        "11b": { "name": "SMU",          "conf": "AAC",     "lat": 32.841, "lng": -96.784, "coachExp": 12 },
         "12": { "name": "UNLV",         "conf": "MWC",     "lat": 36.108, "lng": -115.143,"coachExp": 3 },
         "13": { "name": "Vermont",      "conf": "America East","lat":44.477,"lng":-73.197, "coachExp": 16 },
         "14": { "name": "Akron",        "conf": "MAC",     "lat": 41.075, "lng": -81.517, "coachExp": 7 },
         "15": { "name": "Montana St",   "conf": "Big Sky", "lat": 45.670, "lng": -111.047,"coachExp": 5 },
-        "16": { "name": "SIUE",         "conf": "OVC",     "lat": 38.790, "lng": -89.951, "coachExp": 1 }
+        "16a": { "name": "UMBC",         "conf": "America East","lat": 39.256, "lng": -76.714, "coachExp": 3 },
+        "16b": { "name": "Howard",       "conf": "MEAC",    "lat": 38.922, "lng": -77.020, "coachExp": 5 }
       }
     }
   },
   "firstFour": {
-    "_comment": "First Four games played in Dayton, OH before the main bracket",
-    "games": []
+    "_comment": "First Four games played in Dayton, OH on 3/17-3/18/2026",
+    "location": "Dayton, OH",
+    "arena": "UD Arena",
+    "dates": ["2026-03-17", "2026-03-18"],
+    "games": [
+      { "region": "Midwest", "seed": "16", "teamA": "UMBC",           "teamB": "Howard",       "winner": null },
+      { "region": "West",    "seed": "11", "teamA": "Texas",          "teamB": "NC State",     "winner": null },
+      { "region": "South",   "seed": "16", "teamA": "Prairie View A&M","teamB": "Lehigh",      "winner": null },
+      { "region": "Midwest", "seed": "11", "teamA": "Miami (Ohio)",   "teamB": "SMU",          "winner": null }
+    ]
   },
   "finalFour": {
     "location": "Indianapolis, IN",
